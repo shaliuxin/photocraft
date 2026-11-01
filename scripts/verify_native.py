@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the ARM64 native ABI and ensure the HAP contains no web runtime snapshot."""
+"""Check the packaged native ABIs and ensure the HAP contains no web runtime snapshot."""
 import argparse
 import json
 import struct
@@ -7,6 +7,11 @@ import zipfile
 from pathlib import Path
 
 NATIVE_PAGES = ['pages/Index', 'pages/SubWindow']
+
+# e_machine values from the ELF header. Keep in step with the triples in scripts/build_native.sh
+# and the mapping in entry/src/main/cpp/CMakeLists.txt.
+ELF_MACHINE = {'arm64-v8a': 183, 'x86_64': 62, 'armeabi-v7a': 40}
+DEFAULT_ABIS = ['arm64-v8a', 'x86_64']
 
 
 def verify_file_open(config: dict, utds: dict) -> None:
@@ -38,17 +43,24 @@ def verify_file_open(config: dict, utds: dict) -> None:
         raise ValueError('missing custom file extensions')
 
 
-def verify(path: Path, expected_bundle: str | None = None) -> None:
+def verify(path: Path, expected_bundle: str | None = None,
+           abis: list[str] | None = None) -> None:
+    expected = list(abis or DEFAULT_ABIS)
+    unknown = [abi for abi in expected if abi not in ELF_MACHINE]
+    if unknown:
+        raise ValueError(f'unknown ABIs: {unknown}')
     with zipfile.ZipFile(path) as archive:
         names = archive.namelist()
-        for abi, machine in [('arm64-v8a', 183)]:
+        for abi in expected:
             name = f'libs/{abi}/libphotocraft.so'
             if name not in names:
                 raise ValueError(f'missing {name}')
             data = archive.read(name)
-            if data[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', data, 18)[0] != machine:
+            # 0x02 selects ELF64; every ABI here is 64-bit.
+            if data[:5] != b'\x7fELF\x02' or struct.unpack_from('<H', data, 18)[0] != ELF_MACHINE[abi]:
                 raise ValueError(f'incorrect ELF architecture: {name}')
-        extra = sorted({name.split('/')[1] for name in names if name.startswith('libs/') and name.count('/') >= 2} - {'arm64-v8a'})
+        packaged = {name.split('/')[1] for name in names if name.startswith('libs/') and name.count('/') >= 2}
+        extra = sorted(packaged - set(expected))
         if extra:
             raise ValueError(f'unexpected ABIs in HAP: {extra}')
         forbidden = [name for name in names if name.lower().endswith(('.wasm', '.html', '.js'))]
@@ -62,12 +74,14 @@ def verify(path: Path, expected_bundle: str | None = None) -> None:
             raise ValueError(f"unexpected bundle: {config['app']['bundleName']}")
         verify_file_open(config,
                          json.loads(archive.read('resources/rawfile/arkdata/utd/utd.json5')))
-    print(f'Native HAP verified: {path}')
+    print(f'Native HAP verified: {path} (ABIs: {", ".join(expected)})')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('hap', type=Path)
     parser.add_argument('--expected-bundle')
+    parser.add_argument('--abis', nargs='+', metavar='ABI',
+                        help=f'ABIs the HAP must contain (default: {" ".join(DEFAULT_ABIS)})')
     args = parser.parse_args()
-    verify(args.hap, args.expected_bundle)
+    verify(args.hap, args.expected_bundle, args.abis)

@@ -21,9 +21,9 @@ photocraft-engine = { path = "../../upstream/photocraft/crates/engine" }
 photocraft-cms = { path = "../../upstream/photocraft/crates/cms" }
 photocraft-io = { path = "../../upstream/photocraft/crates/io" }
 photocraft-format = { path = "../../upstream/photocraft/crates/format" }
-egui = { version = "0.36", features = ["default_fonts"] }
-egui-wgpu = { version = "0.36", default-features = false }
-wgpu = { version = "30", default-features = false, features = ["std", "wgsl", "gles"] }
+egui = { version = "0.36.2", features = ["default_fonts"] } # pinned by scripts/upstream_sync.py
+egui-wgpu = { version = "0.36.2", default-features = false } # pinned by scripts/upstream_sync.py
+wgpu = { version = "30.0.1", default-features = false, features = ["std", "wgsl", "gles"] } # pinned by scripts/upstream_sync.py
 raw-window-handle = "0.6"
 pollster = "1"
 serde = { version = "1", features = ["derive"] }

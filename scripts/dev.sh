@@ -10,17 +10,33 @@ export DEVECO_SDK_HOME="${DEVECO_SDK_HOME:-/Applications/DevEco-Studio.app/Conte
 export JAVA_HOME="${JAVA_HOME:-/Applications/DevEco-Studio.app/Contents/jbr/Contents/Home}"
 export PATH="/Applications/DevEco-Studio.app/Contents/tools/node/bin:$PATH"
 BUNDLE="${PHOTOCRAFT_BUNDLE:-io.github.storytold.photocraft.hmos}"
+# ABIs to build and package. Both by default, so one HAP covers ARM devices and the x86_64
+# phone/PC emulator images; set PHOTOCRAFT_ABIS to a single ABI for a faster loop.
+ABIS="${PHOTOCRAFT_ABIS:-arm64-v8a x86_64}"
+triple_for() {
+  case "$1" in
+    arm64-v8a) echo aarch64-unknown-linux-ohos ;;
+    x86_64) echo x86_64-unknown-linux-ohos ;;
+    armeabi-v7a) echo armv7-unknown-linux-ohos ;;
+    *) echo "Unknown ABI: $1" >&2; return 1 ;;
+  esac
+}
+TARGETS=""
+for abi in $ABIS; do TARGETS="$TARGETS $(triple_for "$abi")"; done
 one_device() {
   local count
   count="$("$HDC" list targets | tr -d '\r' | awk 'NF && $0 != "[Empty]" {n++} END {print n+0}')"
   [[ "$count" == 1 ]] || { echo "Connect exactly one simulator/device ($count found)" >&2; exit 1; }
 }
 build() {
-  "$ROOT/scripts/build_native.sh"
+  # shellcheck disable=SC2086
+  PHOTOCRAFT_NATIVE_TARGETS="$TARGETS" "$ROOT/scripts/build_native.sh"
   cd "$ROOT"
   "$OHPM" install
   "$HVIGOR" assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
-  python3 "$ROOT/scripts/verify_native.py" "$ROOT/entry/build/default/outputs/default/entry-default-unsigned.hap" --expected-bundle "$BUNDLE"
+  # shellcheck disable=SC2086
+  python3 "$ROOT/scripts/verify_native.py" "$ROOT/entry/build/default/outputs/default/entry-default-unsigned.hap" \
+    --expected-bundle "$BUNDLE" --abis $ABIS
 }
 install() {
   one_device

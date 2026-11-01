@@ -7,7 +7,7 @@ import { common } from '@kit.AbilityKit';
 import { fileIo, fileUri, picker } from '@kit.CoreFileKit';
 import { photoAccessHelper } from '@kit.MediaLibraryKit';
 import { i18n } from '@kit.LocalizationKit';
-import { BusinessError } from '@kit.BasicServicesKit';
+import { BusinessError, deviceInfo } from '@kit.BasicServicesKit';
 import { ComponentContent, KeyboardAvoidMode } from '@kit.ArkUI';
 import { applySystemBars, isDarkChrome, LOADING_CHROME, normalizeChrome } from '../SystemBars';
 import { setOpenListener, takeOpens } from '../openInbox';
@@ -36,11 +36,18 @@ class NativeConfig {
   systemTheme: string;
   // Whether the egui status-bar button / Window menu item for full screen are offered (not on 2in1).
   fullscreen: boolean;
-  constructor(files: string, documents: string, scale: number, language: string, displayP3: boolean, systemTheme: string, fullscreen: boolean) {
+  // Device form factor ('phone' | 'tablet' | '2in1' | …) and the editor width in vp. The native
+  // host keeps them so its layout decisions can follow the device instead of a build-time flag.
+  deviceType: string;
+  widthVp: number;
+  constructor(files: string, documents: string, scale: number, language: string, displayP3: boolean,
+              systemTheme: string, fullscreen: boolean, deviceType: string, widthVp: number) {
     this.files = files; this.documents = documents; this.scale = scale; this.language = language;
     this.displayP3 = displayP3;
     this.systemTheme = systemTheme;
     this.fullscreen = fullscreen;
+    this.deviceType = deviceType;
+    this.widthVp = widthVp;
   }
 }
 class NativeMessage { kind: string = ''; text: string = ''; }
@@ -195,7 +202,7 @@ struct Index {
       if (systemTheme !== SYSTEM_THEME_DARK && systemTheme !== SYSTEM_THEME_LIGHT) {
         systemTheme = '';
       }
-      native.init(JSON.stringify(new NativeConfig(this.context.filesDir, documents, scale, i18n.System.getSystemLanguage(), displayP3, systemTheme, fullscreenAvailable())),
+      native.init(JSON.stringify(new NativeConfig(this.context.filesDir, documents, scale, i18n.System.getSystemLanguage(), displayP3, systemTheme, fullscreenAvailable(), deviceInfo.deviceType, this.getUIContext().px2vp(display.getDefaultDisplaySync().width))),
         (id: number, message: string, data: ArrayBuffer) => { this.receive(id, message, data); });
       // A recreated page can start while the window is still full screen: bring Rust in line.
       if (fullscreenOn()) { reportFullscreen(true); }

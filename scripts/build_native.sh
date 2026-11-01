@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the ARM64 HarmonyOS library before invoking hvigor/CMake.
+# Build the HarmonyOS native libraries (every ABI in PHOTOCRAFT_NATIVE_TARGETS) before hvigor/CMake.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 if [[ -f "$ROOT/scripts/dev.local.env" ]]; then source "$ROOT/scripts/dev.local.env"; fi
@@ -11,7 +11,10 @@ if [[ ! -d "$SDK/llvm" ]]; then
   done
 fi
 [[ -x "$SDK/llvm/bin/clang" ]] || { echo "HarmonyOS native SDK not found: $SDK" >&2; exit 1; }
-TARGETS="${PHOTOCRAFT_NATIVE_TARGETS:-aarch64-unknown-linux-ohos}"
+# One list drives the build: CMake maps the same ABIs (entry/build-profile.json5 abiFilters), and
+# verify_native.py checks the packaged set. Both ABIs ship by default so one HAP runs on ARM
+# devices and on the x86_64 phone/PC emulator images.
+TARGETS="${PHOTOCRAFT_NATIVE_TARGETS:-aarch64-unknown-linux-ohos x86_64-unknown-linux-ohos}"
 PROFILE="${PHOTOCRAFT_RUST_PROFILE:-release}"
 HAP_VERSION="${PHOTOCRAFT_HAP_VERSION:-$(python3 - "$ROOT/AppScope/app.json5" <<'PYVERSION'
 import json
@@ -26,7 +29,10 @@ ARGS=()
 # Explicit dev profile also avoids expanding an empty array under macOS Bash 3's nounset.
 case "$PROFILE" in release) ARGS+=(--release);; debug) ARGS+=(--profile dev);; *) echo 'Profile must be release or debug' >&2; exit 2;; esac
 for target in $TARGETS; do
-  case "$target" in aarch64-unknown-linux-ohos) ;; *) echo "Unsupported target: $target" >&2; exit 2;; esac
+  case "$target" in
+    aarch64-unknown-linux-ohos|x86_64-unknown-linux-ohos|armv7-unknown-linux-ohos) ;;
+    *) echo "Unsupported target: $target" >&2; exit 2;;
+  esac
   [[ -d "$(rustc --print sysroot)/lib/rustlib/$target" ]] || { echo "Install target with: rustup target add $target" >&2; exit 1; }
   compiler="$SDK/llvm/bin/$target-clang"
   suffix="${target//-/_}"
@@ -36,6 +42,6 @@ for target in $TARGETS; do
       "PHOTOCRAFT_HAP_VERSION=$HAP_VERSION" \
       cargo build --locked --manifest-path "$ROOT/native/rust/Cargo.toml" --target "$target" "${ARGS[@]}"
 done
-# Cargo is finished: clear native and upstream Rust intermediates, retaining the
-# ARM64 libraries required by CMake/HAP. dev.sh, offline packaging and CI share this step.
+# Cargo is finished: clear native and upstream Rust intermediates, retaining the ABI libraries
+# required by CMake/HAP. dev.sh, offline packaging and CI share this step.
 python3 "$ROOT/scripts/clean_rust_debug.py" || echo 'Warning: Rust cache cleanup failed' >&2

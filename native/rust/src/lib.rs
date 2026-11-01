@@ -19,6 +19,8 @@ mod display_color;
 #[cfg(any(target_env = "ohos", test))]
 mod documents;
 #[cfg(any(target_env = "ohos", test))]
+mod form_factor;
+#[cfg(any(target_env = "ohos", test))]
 mod export_write;
 #[cfg(any(target_env = "ohos", test))]
 mod drop_import;
@@ -72,6 +74,12 @@ struct Config {
     /// ArkTS offers window full screen (false on 2in1, where WindowChrome owns the window).
     #[serde(default)]
     fullscreen: bool,
+    /// `deviceInfo.deviceType`; empty when the host did not report one.
+    #[serde(default, rename = "deviceType")]
+    device_type: String,
+    /// Editor width in vp at launch; zero when unknown.
+    #[serde(default, rename = "widthVp")]
+    width_vp: f32,
 }
 fn default_scale() -> f32 {
     1.
@@ -523,6 +531,19 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
         bridge::notify(0, "diagnostic", &message, &[]);
     }
     photocraft_engine::installed_profiles::set_app_profile_dir(Some(profiles));
+    // One HAP now covers phone, tablet and 2in1. Record the form factor the host reported so
+    // layout code reads one value instead of re-deriving it, and so a bug report says which device
+    // shape it came from.
+    let form = form_factor::Form::new(&config.device_type, config.width_vp);
+    bridge::notify(
+        0,
+        "diagnostic",
+        &format!(
+            "form factor {:?}, {:.0} vp, {:?}",
+            form.device_type, form.width_vp, form.width_class
+        ),
+        &[],
+    );
     let ctx = egui::Context::default();
     PhotocraftApp::setup_context(&ctx, Default::default());
     bridge::notify(0, "stage", "egui context ready", &[]);
