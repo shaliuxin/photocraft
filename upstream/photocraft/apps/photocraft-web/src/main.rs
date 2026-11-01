@@ -12,9 +12,7 @@
 //! - dropped files are read asynchronously by `web::WebShell` and delivered through `Services::inbox`.
 //!
 //! URL query flags: `?cpu` forces the CPU canvas path (same as `PHOTOCRAFT_CPU_CANVAS=1`);
-//! `?webgl` forces the WebGL2 backend instead of WebGPU; `?lang=<tag>` selects the UI language
-//! when Preferences › Interface › Language is `auto`. Without `lang`, Auto follows
-//! `navigator.languages`, then `navigator.language`. A saved language still wins.
+//! `?webgl` forces the WebGL2 backend instead of WebGPU.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -25,15 +23,10 @@ mod preset_bridge;
 mod indexed_presets;
 
 #[cfg(target_arch = "wasm32")]
-mod stylus_input;
-#[cfg(target_arch = "wasm32")]
 mod web;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {
-    std::panic::set_hook(Box::new(|info| {
-        web_sys::console::error_1(&wasm_bindgen::JsValue::from_str(&format!("PhotoCraft panic: {info}")));
-    }));
     web::start();
 }
 

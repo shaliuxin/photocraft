@@ -4,7 +4,7 @@ use std::cell::Cell;
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use photocraft_codecs::{ChannelLayout, EncodeOptions, Image};
 use photocraft_doc::Document;
@@ -15,8 +15,6 @@ use photocraft_ui_egui::{FileDialogAnswer, FileDialogRequest, PhotocraftApp, Ser
 use wasm_bindgen::JsCast as _;
 
 type Inbox = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
-type HostFonts = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
-type CloseRequest = Arc<AtomicBool>;
 
 /// Everything File › Open reads: PhotoCraft, Photoshop, OpenRaster, Krita and Affinity documents, flat images, and
 /// Photoshop brushes (.abr), gradients (.grd), layer styles (.asl) and swatches (.aco, .act, .ase), which go to the preset libraries.
@@ -82,6 +80,7 @@ pub fn start() {
                 canvas,
                 options,
                 Box::new(move |cc| {
+                    PhotocraftApp::install_type_reset_hooks(&cc.egui_ctx);
                     PhotocraftApp::setup_context(&cc.egui_ctx, ThemeKind::Pro);
                     let inbox: Inbox = Arc::default();
                     let place_inbox: Inbox = Arc::default();
@@ -89,10 +88,6 @@ pub fn start() {
                     load_font_manifest(served.clone(), cc.egui_ctx.clone());
                     let (session, warnings) = crate::preset_bridge::session(presets.clone());
                     preset_warnings.extend(warnings);
-                    let host_fonts: HostFonts = Arc::default();
-                    fetch_host_fonts(host_fonts.clone(), cc.egui_ctx.clone());
-                    let close_request: CloseRequest = Arc::default();
-                    listen_host_close(close_request.clone(), cc.egui_ctx.clone());
                     let drag = listen_drag(&pen_target);
                     let mut app = PhotocraftApp::new(session, services(inbox.clone(), place_inbox.clone(), drag_pos_service(pen_target.clone(), drag)));
                     if !preset_warnings.is_empty() {
@@ -108,7 +103,7 @@ pub fn start() {
                     }
                     let unsaved = Arc::new(AtomicBool::new(false));
                     guard_unload(unsaved.clone());
-                    Ok(Box::new(WebShell { app, inbox, place_inbox, host_fonts, close_request, unsaved, served, database, presets }))
+                    Ok(Box::new(WebShell { app, inbox, place_inbox, unsaved, served, database, presets, ui_language: "" }))
                 }),
             )
             .await;
@@ -224,12 +219,15 @@ fn load_font_manifest(served: Served, ctx: egui::Context) {
             files.entry(f.family.clone()).or_default().push((f.file.clone(), f.integrity.clone()));
         }
         log::info!("photocraft-web: {} served font families", files.len());
-        served.lock().unwrap_or_else(|e| e.into_inner()).files = files;
+        served.lock().unwrap_or_else(PoisonError::into_inner).files = files;
         // The families for the font menus, and the script fallbacks (the manifest's `scripts`).
         served_fonts::add_fonts(&fonts);
         // Fetch now the fallbacks of the scripts the browser's languages use (an Arabic reader gets
         // the Arabic font before typing); the rest is fetched when text or a font menu needs it.
-        served_fonts::request_for_languages(browser_languages().iter().map(String::as_str));
+        // Also the interface language's: `serve_fonts` asked for it once already, maybe before
+        // this manifest arrived, when no fallback was registered yet.
+        let ui_language = photocraft_ui_egui::i18n::current().code();
+        served_fonts::request_for_languages(browser_languages().iter().map(String::as_str).chain([ui_language]));
         ctx.request_repaint();
     });
 }
@@ -265,8 +263,6 @@ async fn fetch_bytes(url: &str, integrity: Option<&str>) -> Result<Vec<u8>, Stri
 /// Wraps the app to read dropped files asynchronously (browsers can't read them synchronously,
 /// so the app's own drop path can't handle them) and feed them through the inboxes.
 struct WebShell {
-    host_fonts: HostFonts,
-    close_request: CloseRequest,
     app: PhotocraftApp,
     /// Dropped files to open as documents.
     inbox: Inbox,
@@ -277,6 +273,8 @@ struct WebShell {
     served: Served,
     database: Option<web_sys::IdbDatabase>,
     presets: crate::preset_bridge::Bridge,
+    /// The interface language whose served script font was last asked for.
+    ui_language: &'static str,
 }
 
 impl WebShell {
@@ -301,9 +299,15 @@ impl WebShell {
     /// Fetches the served families asked for (picked in a font menu, or needed by a layout) and
     /// installs the files that arrived.
     fn serve_fonts(&mut self, ctx: &egui::Context) {
+        // The interface language's script font draws its labels (Arabic, Japanese…).
+        let ui_language = photocraft_ui_egui::i18n::current().code();
+        if ui_language != self.ui_language {
+            self.ui_language = ui_language;
+            served_fonts::request_for_languages([ui_language]);
+        }
         let requested = served_fonts::take_requests();
         let (fetch, arrived) = {
-            let mut s = self.served.lock().unwrap_or_else(|e| e.into_inner());
+            let mut s = self.served.lock().unwrap_or_else(PoisonError::into_inner);
             let mut fetch = Vec::new();
             for family in requested {
                 if let Some(files) = s.files.get(&family).cloned()
@@ -320,14 +324,14 @@ impl WebShell {
             wasm_bindgen_futures::spawn_local(async move {
                 match fetch_bytes(&file, integrity.as_deref()).await {
                     Ok(bytes) => {
-                        served.lock().unwrap_or_else(|e| e.into_inner()).arrived.push((family, bytes));
+                        served.lock().unwrap_or_else(PoisonError::into_inner).arrived.push((family, bytes));
                         ctx.request_repaint();
                     }
                     Err(e) => log::error!("couldn't fetch served font {file}: {e}"),
                 }
             });
         }
-        served_fonts::install(&mut self.app, arrived);
+        served_fonts::install(&mut self.app, ctx, arrived);
     }
 }
 
@@ -336,13 +340,13 @@ impl eframe::App for WebShell {
         // A tap reaches eframe as Pointer Events and Touch Events: keep one press per tap, or the
         // twin press closes the menu the first one opened (#2095).
         photocraft_ui_egui::touch_twins::drop_twins(ctx, raw_input);
+        // The browser build has no TCP control server, so `inject_synthetic` finds an empty
+        // queue, but the clipboard key mapping (`Event::PasteImage`), legacy pinch, pen-hold and
+        // titlebar normalization live in the app hook and must run here too.
+        eframe::App::raw_input_hook(&mut self.app, ctx, raw_input);
     }
 
     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        install_host_fonts(&self.host_fonts, ctx);
-        if self.close_request.swap(false, Ordering::Relaxed) {
-            let _ = self.app.run("file.exit", Default::default());
-        }
         let dropped = ctx.input_mut(|i| std::mem::take(&mut i.raw.dropped_files));
         if !dropped.is_empty() {
             let names: Vec<String> =
@@ -359,7 +363,7 @@ impl eframe::App for WebShell {
                     match f.bytes_async().await {
                         Ok(bytes) => {
                             let queue = if place { &place_inbox } else { &inbox };
-                            queue.lock().unwrap_or_else(|e| e.into_inner()).push((name, bytes));
+                            queue.lock().unwrap_or_else(PoisonError::into_inner).push((name, bytes));
                             ctx.request_repaint();
                         }
                         Err(e) => log::error!("couldn't read dropped file {name}: {e}"),
@@ -368,8 +372,9 @@ impl eframe::App for WebShell {
             });
         }
         self.serve_fonts(ctx);
-        self.app.logic(ctx, frame);
+        self.app.logic_frame(ctx, frame);
         self.save_presets(ctx);
+        self.app.finish_type_reset_logic(ctx);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -396,52 +401,9 @@ impl eframe::App for WebShell {
                 });
             });
         }
-        self.app.ui(ui, frame);
+        self.app.ui_frame(ui, frame);
         self.save_presets(ui.ctx());
-    }
-}
-
-/// Same-origin faces served by the HarmonyOS wrapper (`/system/fonts/HarmonyOS_Sans_{SC,TC}.ttf`).
-fn fetch_host_fonts(pending: HostFonts, ctx: egui::Context) {
-    for (script, path) in [("zh-hans", "fonts/HarmonyOS_Sans_SC.ttf"), ("zh-hant", "fonts/HarmonyOS_Sans_TC.ttf")] {
-        let pending = pending.clone();
-        let ctx = ctx.clone();
-        wasm_bindgen_futures::spawn_local(async move {
-            let Some(bytes) = fetch_font(path).await else { return };
-            log::info!("host CJK font {path}: {} bytes", bytes.len());
-            pending.lock().unwrap_or_else(|e| e.into_inner()).push((script.to_owned(), bytes));
-            ctx.request_repaint();
-        });
-    }
-}
-
-/// HarmonyOS Sans arrives asynchronously. Register it after the frame's language is applied.
-fn install_host_fonts(pending: &HostFonts, ctx: &egui::Context) {
-    let ready = std::mem::take(&mut *pending.lock().unwrap_or_else(|e| e.into_inner()));
-    if ready.is_empty() {
-        return;
-    }
-    let mut stored = false;
-    for (script, bytes) in ready {
-        if photocraft_ui_egui::cjk_fonts::store_host_cjk_font(&script, bytes) {
-            stored = true;
-        }
-    }
-    if stored {
-        photocraft_ui_egui::cjk_fonts::reapply_host_fonts(ctx);
-    }
-}
-
-/// A HarmonyOS window close request uses the same guarded File › Exit command as the menu.
-fn listen_host_close(close_request: CloseRequest, ctx: egui::Context) {
-    use wasm_bindgen::closure::Closure;
-    let Some(window) = web_sys::window() else { return };
-    let cb = Closure::<dyn FnMut(web_sys::Event)>::new(move |_event: web_sys::Event| {
-        close_request.store(true, Ordering::Relaxed);
-        ctx.request_repaint();
-    });
-    if window.add_event_listener_with_callback("photocraft-request-close", cb.as_ref().unchecked_ref()).is_ok() {
-        cb.forget();
+        self.app.finish_type_reset_pass(ui.ctx());
     }
 }
 

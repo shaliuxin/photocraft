@@ -30,8 +30,6 @@ pub static ICONS: &[(&str, &[u8])] = &[
     ("brush", include_bytes!("../../../assets/icons/brush.svg")),
     ("brush-replace", include_bytes!("../../../assets/icons/brush-replace.svg")),
     ("brush-cleaning", include_bytes!("../../../assets/icons/brush-cleaning.svg")),
-    // PhotoCraft original: Only show canvas (Tab) — hollow centre square with four L-corner brackets.
-    ("canvas-only", include_bytes!("../../../assets/icons/canvas-only.svg")),
     ("check", include_bytes!("../../../assets/icons/check.svg")),
     ("chevron-down", include_bytes!("../../../assets/icons/chevron-down.svg")),
     ("chevron-left", include_bytes!("../../../assets/icons/chevron-left.svg")),
@@ -72,9 +70,6 @@ pub static ICONS: &[(&str, &[u8])] = &[
     ("folder-plus", include_bytes!("../../../assets/icons/folder-plus.svg")),
     ("frame-placeholder", include_bytes!("../../../assets/icons/frame-placeholder.svg")),
     ("gauge", include_bytes!("../../../assets/icons/gauge.svg")),
-    // PhotoCraft originals: window full screen enter / exit (four diagonal corner arrows).
-    ("fullscreen-enter", include_bytes!("../../../assets/icons/fullscreen-enter.svg")),
-    ("fullscreen-exit", include_bytes!("../../../assets/icons/fullscreen-exit.svg")),
     // PhotoCraft original: the Gradient tool glyph (a rectangle filled with a linear ramp).
     ("gradient", include_bytes!("../../../assets/icons/gradient.svg")),
     ("grid-2x2", include_bytes!("../../../assets/icons/grid-2x2.svg")),
@@ -109,6 +104,12 @@ pub static ICONS: &[(&str, &[u8])] = &[
     ("palette", include_bytes!("../../../assets/icons/palette.svg")),
     ("panel-right", include_bytes!("../../../assets/icons/panel-right.svg")),
     ("panels-top-left", include_bytes!("../../../assets/icons/panels-top-left.svg")),
+    ("path-op-combine", include_bytes!("../../../assets/icons/path-op-combine.svg")),
+    ("path-op-exclude", include_bytes!("../../../assets/icons/path-op-exclude.svg")),
+    ("path-op-intersect", include_bytes!("../../../assets/icons/path-op-intersect.svg")),
+    ("path-op-merge", include_bytes!("../../../assets/icons/path-op-merge.svg")),
+    ("path-op-new-layer", include_bytes!("../../../assets/icons/path-op-new-layer.svg")),
+    ("path-op-subtract", include_bytes!("../../../assets/icons/path-op-subtract.svg")),
     ("pen-curvature", include_bytes!("../../../assets/icons/pen-curvature.svg")),
     ("pen-freeform", include_bytes!("../../../assets/icons/pen-freeform.svg")),
     ("pen-add-anchor", include_bytes!("../../../assets/icons/pen-add-anchor.svg")),
@@ -149,6 +150,9 @@ pub static ICONS: &[(&str, &[u8])] = &[
     ("stamp", include_bytes!("../../../assets/icons/stamp.svg")),
     ("star", include_bytes!("../../../assets/icons/star.svg")),
     ("star-filled", include_bytes!("../../../assets/icons/star-filled.svg")),
+    // PhotoCraft originals: the font menu's Show Similar Fonts and Show Variable Fonts filters.
+    ("font-similar", include_bytes!("../../../assets/icons/font-similar.svg")),
+    ("font-variable", include_bytes!("../../../assets/icons/font-variable.svg")),
     ("sun", include_bytes!("../../../assets/icons/sun.svg")),
     ("symmetry-diagonal", include_bytes!("../../../assets/icons/symmetry-diagonal.svg")),
     ("symmetry-dual", include_bytes!("../../../assets/icons/symmetry-dual.svg")),

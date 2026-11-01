@@ -11,7 +11,7 @@ use crate::theme::{ThemeKind, Tokens};
 const SIZE: egui::Vec2 = vec2(900.0, 200.0);
 
 fn bottom_id() -> egui::Id {
-    egui::Id::new("status-bar-test-bottom")
+    egui::Id::unique("status-bar-test-bottom")
 }
 
 fn harness(kind: ThemeKind) -> Harness<'static, PhotocraftApp> {
@@ -50,6 +50,11 @@ fn status_bar_controls_sit_inside_the_bar_with_even_margins() {
         // The zoom number (its box is painted around it, `control_h` tall and centred).
         let number = h.get_by_role(egui::accesskit::Role::SpinButton).rect();
         assert!(inner.contains_rect(number), "{kind:?}: bar {bar:?}, number {number:?}");
+        // Pro (Photoshop) has no Fit button in the status bar.
+        if t.pro {
+            assert!(h.query_by_label("Fit").is_none(), "{kind:?}");
+            continue;
+        }
         let fit = h.get_by_label("Fit").rect();
         assert!(inner.contains_rect(fit), "{kind:?}: bar {bar:?}, Fit {fit:?}");
         assert!((fit.center().y - bar.center().y).abs() < 0.51, "{kind:?}: bar {bar:?}, Fit {fit:?}");
@@ -192,11 +197,12 @@ fn fullscreen_status_zoom_preserves_shift_precision_and_recovers_from_the_minimu
     assert!(h.state().ui.views[0].zoom > minimum, "reversing direction responds immediately after reaching a bound");
 }
 
-/// Toggling appearance preserves the Pro layout and the HarmonyOS Fit control.
+/// #5016: toggling appearance between dark and light with default settings preserves the Pro
+/// layout and does not make a Fit button appear.
 #[test]
-fn appearance_toggle_preserves_pro_layout_and_fit_button() {
+fn appearance_toggle_preserves_pro_layout_and_has_no_fit_button() {
     let mut h = harness(ThemeKind::ProMedium);
-    assert!(h.query_by_label("Fit").is_some());
+    assert!(h.query_by_label("Fit").is_none());
     assert!(Tokens::get(&h.ctx).pro);
 
     // Switch to Light mode (top-bar appearance button).
@@ -210,5 +216,5 @@ fn appearance_toggle_preserves_pro_layout_and_fit_button() {
     assert_eq!(h.state().session.prefs().interface.appearance_mode, photocraft_engine::prefs::AppearanceMode::Light);
     assert_eq!(h.state().ui.theme, ThemeKind::ProLight);
     assert!(Tokens::get(&h.ctx).pro);
-    assert!(h.query_by_label("Fit").is_some(), "Fit stays available in light mode");
+    assert!(h.query_by_label("Fit").is_none(), "Fit button must not appear in light mode (#5016)");
 }

@@ -66,7 +66,7 @@ fn injected_loss_stops_gpu_work_without_panicking() {
     // Every entry point is a no-op or an error now.
     let r = g.refresh(key, &d, None, None);
     assert_eq!(r.kind, "lost");
-    assert!(r.fallback.as_deref().unwrap_or("").contains("GPU device lost"));
+    assert!(r.fallback.as_ref().is_some_and(|f| f.to_string().contains("GPU device lost")));
     assert!(g.composite(&d, d.bounds(), false).is_err());
     assert!(!g.upload_rect(key, [0, 0], [1, 1], &[0; 4]));
     g.upload_full(key, [1, 1], &[0; 4]);
@@ -185,18 +185,6 @@ fn system_info_lists_the_graphics_state() {
     }
     let v = gpu_status::system_info_json(&app);
     assert_eq!(v["gpu"]["adapter"], "Test GPU");
-}
-
-#[test]
-fn system_info_reports_the_target_platform_consistently() {
-    let app = PhotocraftApp::new(photocraft_engine::Session::new(), photocraft_ui_egui::Services::default());
-    let os = if cfg!(target_env = "ohos") { "OpenHarmony/OHOS" } else { std::env::consts::OS };
-    let info = gpu_status::system_info_json(&app);
-    let platform = format!("Platform: {os} {}", std::env::consts::ARCH);
-    assert!(gpu_status::system_info(&app).contains(&platform));
-    assert_eq!(info["os"], os);
-    assert_eq!(info["arch"], std::env::consts::ARCH);
-    assert!(info["lines"].as_array().is_some_and(|lines| lines.contains(&serde_json::json!(platform))));
 }
 
 /// A canvas whose display textures exceed the canvas budget gets none: no texture set is built,

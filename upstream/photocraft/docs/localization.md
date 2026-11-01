@@ -29,6 +29,10 @@ contextual, command-ID and plural translations; missing entries fall back to Eng
 | Tiếng Việt | `vi` | one form |
 | Srpski | `sr` | one / few / many (teens use many) |
 | हिन्दी | `hi` | one / other |
+| Svenska | `sv` | one / other |
+| Suomi | `fi` | one / other (partitive after every count but 1) |
+| Dansk | `da` | one / other |
+| Norsk bokmål | `nb` | one / other |
 
 Languages registered with `complete_menus` cover the current menu labels, `tl!` literals, blend
 mode names, and generated preference labels. A string a catalog lacks shows in English:
@@ -53,6 +57,9 @@ native system locale; an unsupported code follows the same fallback. Regional ta
 Simplified Chinese remain distinct. Every Portuguese locale (`pt`, `pt-BR`, `pt-PT`) uses the
 Brazilian Portuguese catalog. The Serbian catalog is written in Latin script (Ekavian); every
 Serbian locale (`sr-RS`, `sr-Latn-RS`, `sr_RS@latin`, and Cyrillic `sr-Cyrl-RS`) resolves to it.
+Swedish locales from Sweden and Finland (`sv-SE`, `sv-FI`, `sv_FI.UTF-8`) use the Swedish catalog;
+Finnish (`fi-FI`) uses the Finnish one. Every Norwegian locale (`nb-NO`, the macrolanguage `no`,
+and Nynorsk `nn-NO` from POSIX systems) uses the Bokmål catalog.
 
 ### First launch and system language
 
@@ -74,13 +81,8 @@ The native-only, pinned `sys-locale` dependency provides safe Rust access to the
 override falls back to English. Empty overrides use the system. Unix locale variables do not
 override Windows/macOS UI-language preferences. Tags are read once per process (at most 64,
 128 bytes each) and matched against the supported language registry. Changes to the
-OS language list itself take effect at the next launch.
-
-The web build uses the same Auto rules. `?lang=<tag>` on the page URL is the single-tag
-override (`?webgl&cpu&lang=zh-Hans`, including percent-encoded tags). An empty or absent
-`lang` follows `navigator.languages`, then `navigator.language`. An unsupported `lang`
-stays English and does not fall through to the browser list. Tags are read once per page
-load. A saved Interface language still takes precedence over both.
+OS language list itself take effect at the next launch. The web build keeps its existing
+English Auto fallback until browser-locale detection is implemented.
 
 API implementation and licensing: [sys-locale](https://github.com/1Password/sys-locale).
 
@@ -108,13 +110,15 @@ title, options and status bars read from the right (`crates/ui-egui/src/directio
 direction follows the language code, so a catalog needs no extra setting.
 
 Not mirrored yet: panel interiors, dialogs, menu rows (shortcuts stay on the right), submenus
-(they open to the right), document tabs and the canvas. Before an Arabic catalog reads
-correctly, the UI also needs an Arabic fallback font (the bundled UI fonts have no Arabic
-glyphs) and bidirectional word order: egui 0.36 shapes each right-to-left word with HarfRust,
-so letters join, but lays a line's words out left to right, and its caret indexing is off in
-right-to-left text (emilk/egui#8576, #8577). Document text is laid out by the text engine.
+(they open to the right), document tabs and the canvas. egui 0.37 lays text out with the Unicode
+Bidirectional Algorithm (each paragraph takes the direction of its first strong letter), so
+catalogs, layer names and document names are handed to it in logical order, as typed; never
+pre-reorder a label. The title line forces a left-to-right paragraph so "— PhotoCraft" stays at
+the right of a right-to-left document name, and `bidi_text::elide` cuts a right-to-left name at
+its logical end. Document text is laid out by the text engine.
 
-No right-to-left catalog ships yet. To check the mirrored layout with any language, launch with
+Arabic (`ar`) is the first right-to-left catalog: Modern Standard Arabic, Western digits, the six
+CLDR plural forms (zero|one|two|few|many|other). To check the mirrored layout with any language, launch with
 `PHOTOCRAFT_UI_DIRECTION=rtl` (or `ltr` to force left-to-right); it is read once per process
 and has no effect on the web build:
 
@@ -131,12 +135,8 @@ Other languages retain the system's CJK fallback preference for document names a
 
 Font files are not added to this repository. Native rendering uses installed system fonts
 and the optional craft-fonts build input; see [Fonts](development.md#fonts-craft-fonts).
-The web build can select every catalog. Automatic browser-locale detection uses `?lang=` and
-`navigator.languages`, as above. A plain browser still has no CJK faces. The HarmonyOS wrapper
-reads HarmonyOS Sans SC and TC from the system (`font.getFontByName`, then
-`/system/fonts/HarmonyOS_Sans_SC.ttf` and `HarmonyOS_Sans_TC.ttf`) and serves them at
-`fonts/HarmonyOS_Sans_SC.ttf` and `fonts/HarmonyOS_Sans_TC.ttf`. The web shell registers those
-bytes as UI fallbacks and as type-tool families. The font files are not bundled.
+The web build can select every catalog, but CJK glyph delivery and automatic browser-locale
+detection remain separate outstanding work. Switching catalogs does not supply missing fonts.
 
 ## Add or maintain a catalog
 

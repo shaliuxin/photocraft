@@ -69,14 +69,19 @@ pub fn poll(app: &mut PhotocraftApp, ctx: &egui::Context) {
     poll_with_output_name(app, ctx, None);
 }
 
-#[cfg(all(feature = "eframe-host", target_os = "linux"))]
-pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, frame: &eframe::Frame) {
-    let output_name = frame.winit_window().and_then(|window| window.current_monitor()).and_then(|monitor| monitor.name());
+// The output name identifies the monitor on X11 and Wayland, which is what a reading is keyed
+// by; that name comes from the toolkit window, so only eframe on Linux has one to offer.
+#[cfg(all(target_os = "linux", feature = "eframe-host"))]
+pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, parent: Option<&crate::file_dialog::ParentFrame>) {
+    let output_name = parent
+        .and_then(|frame| frame.winit_window())
+        .and_then(|window| window.current_monitor())
+        .and_then(|monitor| monitor.name());
     poll_with_output_name(app, ctx, output_name);
 }
 
-#[cfg(all(feature = "eframe-host", not(target_os = "linux")))]
-pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, _frame: &eframe::Frame) {
+#[cfg(not(all(target_os = "linux", feature = "eframe-host")))]
+pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, _parent: Option<&crate::file_dialog::ParentFrame>) {
     poll(app, ctx);
 }
 

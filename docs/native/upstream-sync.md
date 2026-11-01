@@ -1,9 +1,14 @@
 # Upstream sync playbook
 
-This fork carries upstream PhotoCraft as a Git subtree at `upstream/photocraft/`, plus a native
-adapter in `native/rust/` that reuses upstream crates through path dependencies. Staying on the
-newest upstream release is therefore a merge problem, not a port problem — but only if the two
-places where versions leak are kept under control.
+The repository carries upstream PhotoCraft at `upstream/photocraft/`, plus a native adapter in
+`native/rust/` that reuses upstream crates through path dependencies. Since v0.18.0 the carried
+tree is **pristine upstream with a small patch series applied** (`patches/*.patch`), not a fork:
+the port keeps its own code in the adapter and asks upstream for exactly one thing, a host seam.
+
+That changes an upgrade from a merge into a replay. `v0.16.0`'s fork edited 114 upstream files
+(7,620 lines) and cost 72 conflict hunks per release; the v0.18.0 host patch is 167 insertions and
+82 deletions in 14 files and applies in one shot. See `docs/native/v0.18-port-plan.md` for the
+measurement and for what is still unported.
 
 ## What actually breaks on an upstream bump
 
@@ -43,27 +48,62 @@ new wgpu version (and reported as missing when it does not exist yet).
 Run `check` in CI after every subtree pull: it is the difference between "the adapter still builds
 against upstream" and "the adapter silently builds against last month's egui".
 
-## The judgement half: the merge itself
+## The judgement half: replaying the patch series
 
-Follow `AGENTS.md`: syncs land on `upstream-track` through `git subtree pull --prefix=upstream/photocraft
-upstream <tag>` **without `--squash`**, and are reviewed before they reach `main`.
+`patches/` is the recipe. To move to a new upstream tag:
 
-Then, per conflicted file, pick one of three strategies:
+```sh
+# 1. a clean tree of the release, and a scratch repo to replay in
+git archive <new-tag> | tar -x -C /tmp/upstream-new
+
+# 2. replace the carried tree and replay in order; -3 leaves conflict markers
+rm -rf upstream/photocraft && cp -a /tmp/upstream-new upstream/photocraft
+for p in patches/*.patch; do
+  git apply -3 --directory=upstream/photocraft "$p" || echo "CONFLICT in $p"
+done
+
+# 3. the mechanical half, then the gate
+python3 scripts/upstream_sync.py pins --write
+python3 scripts/upstream_sync.py versions --write
+python3 scripts/upstream_sync.py check
+```
+
+A conflict here is a real answer — the upstream line the patch touches has changed — and it is
+scoped to one hunk instead of one of seventy-two. Resolve it in place, then regenerate the patch:
+
+```sh
+git diff -- upstream/photocraft/crates/ui-egui > patches/0001-host-frame.patch   # or `git format-patch`
+```
+
+Rules for keeping the series replayable:
 
 | Situation | Strategy |
 |---|---|
-| Fork edit is a small `cfg!(feature = "harmonyos-ui")` guard | Re-apply by hand at the new location. |
-| File moved upstream | Apply the fork's diff (`git diff <old-base> HEAD -- <old path>`) to the new path with `patch -p1 --fuzz=3`; check the rejects. |
-| Fork edit is brand/i18n text only | Take upstream and re-add the fork's lines to the catalogs. |
+| Patch adds a host seam (a method, a feature, an extension point) | Keep it in `patches/`; it is the only thing upstream must carry. |
+| Patch adds a `cfg!(harmonyos-ui)` guard to an upstream file | Move the behaviour into the adapter instead; a guard is a hunk the next release has to carry. |
+| Patch is brand/i18n text | Ship it from the adapter at build time (an overlay), never as a patch hunk. |
 
-Translation catalogs (`crates/ui-egui/src/i18n/*.tsv`) are appended by both sides, so they conflict
-on nearly every release while carrying no logic. Prefer taking upstream's file and appending the
-fork's HarmonyOS keys; keep the keys in one block per file so the next sync is a copy-paste.
+Translation catalogs (`crates/ui-egui/src/i18n/*.tsv`) are the worst case: both sides append, so
+they conflict on nearly every release while carrying no logic. Overlaying them from the adapter
+removes that entire class.
 
-## Keeping the next sync cheap
+## Port layers
 
-The fork currently edits 114 upstream files (7,620 changed lines) — that is the whole cost of a
-sync. Almost all of it falls into three groups, and only the third needs to live in upstream files:
+The port's own code is layered so each layer is one patch and one verification:
+
+| Layer | Where | State |
+|---|---|---|
+| Host seam | `patches/0001-host-frame.patch` | done, builds on both ABIs |
+| Engine/format hooks | `patches/` (to add) | 144 lines |
+| Fonts and locale | `patches/` (to add) | 286 lines |
+| Pen input | `patches/` (to add) | 1,106 lines (can be ~200 if upstream's stylus is reused) |
+| Sandbox file access | `patches/` (to add) | 914 lines |
+| Window chrome and themes | `patches/` (to add) | 1,071 lines |
+
+## Why the fork is gone
+
+The v0.16 fork edited 114 upstream files (7,620 changed lines) — that was the whole cost of a
+sync. Almost all of it fell into three groups, and only the third needs to live in upstream files:
 
 * **Brand and i18n text** (`brand.rs`, `links.rs`, `i18n/*.tsv`): could be produced by the adapter
   at build time from an overlay instead of being patched in.

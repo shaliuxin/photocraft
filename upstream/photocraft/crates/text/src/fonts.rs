@@ -196,6 +196,9 @@ pub struct FontDb {
     /// [`Self::fallback_stack`] (#1909). Off, only the default family shapes the text.
     missing_glyph_protection: bool,
     face_cache: HashMap<String, Vec<FaceInfo>>,
+    /// Each family's [`crate::FamilyTraits`] (font menu filters), filled lazily; `None` for a
+    /// family whose fonts can't be read.
+    traits_cache: HashMap<String, Option<crate::FamilyTraits>>,
     face_aliases: HashMap<(String, usize), String>,
     /// This is the shared engine's database: registrations also move [`shared_generation`].
     shared: bool,
@@ -218,6 +221,7 @@ impl FontDb {
             fallbacks: Vec::new(),
             missing_glyph_protection: true,
             face_cache: HashMap::new(),
+            traits_cache: HashMap::new(),
             face_aliases: HashMap::new(),
             shared: false,
         };
@@ -281,6 +285,7 @@ impl FontDb {
             }
             self.ps_cache.clear();
             self.face_cache.clear();
+            self.traits_cache.clear();
             self.refresh_generics();
         }
     }
@@ -316,6 +321,7 @@ impl FontDb {
         names.sort_by_key(|n| (is_hidden_family(n), n.to_lowercase()));
         self.ps_cache.clear();
         self.face_cache.clear();
+        self.traits_cache.clear();
         self.refresh_generics();
         GENERATION.fetch_add(1, Ordering::Relaxed);
         if self.shared {
@@ -355,11 +361,6 @@ impl FontDb {
                 self.fallbacks.push(f);
             }
         }
-    }
-
-    /// Rebuild the CJK fallback list after [`crate::cjk::set_ui_locale`] or a newly registered face.
-    pub fn refresh_fallbacks(&mut self) {
-        self.refresh_generics();
     }
 
     /// Families available after the requested one (bundled default + installed coverage fonts).
@@ -478,6 +479,24 @@ impl FontDb {
             .collect();
         self.face_cache.insert(family.to_string(), faces.clone());
         faces
+    }
+
+    /// What the font menu filters and sorts a family by ([`crate::font_class`]), read from its
+    /// regular face (the upright face nearest weight 400). `None` when the family is unknown or
+    /// none of its fonts can be read.
+    pub fn family_traits(&mut self, family: &str) -> Option<crate::FamilyTraits> {
+        if let Some(t) = self.traits_cache.get(family) {
+            return t.clone();
+        }
+        let traits = (|| {
+            let info = self.fcx.collection.family_by_name(family)?;
+            let face = info.fonts().iter().min_by_key(|f| (!matches!(f.style(), FontStyle::Normal), (f.weight().value() - 400.0).abs() as u32))?.clone();
+            let blob = face.load(Some(&mut self.fcx.source_cache))?;
+            let font = skrifa::FontRef::from_index(blob.as_ref(), face.index()).ok()?;
+            Some(crate::font_class::traits_of(family, &font))
+        })();
+        self.traits_cache.insert(family.to_string(), traits.clone());
+        traits
     }
 
     /// Resolve a menu style to its actual metadata instead of guessing from its spelling.
@@ -955,9 +974,6 @@ pub(crate) fn system_font_dirs() -> Vec<std::path::PathBuf> {
         if let Some(h) = &home {
             v.push(h.join("Library/Fonts"));
         }
-    } else if cfg!(target_env = "ohos") {
-        // HarmonyOS exposes its installed fonts here, rather than Linux's /usr/share/fonts.
-        v.push(PathBuf::from("/system/fonts"));
     } else if cfg!(target_os = "windows") {
         let windir = std::env::var_os("WINDIR").map_or_else(|| PathBuf::from("C:\\Windows"), PathBuf::from);
         v.push(windir.join("Fonts"));
@@ -1015,7 +1031,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+    #[cfg(target_os = "linux")]
     fn scans_flatpak_host_fonts() {
         let dirs = super::system_font_dirs();
         assert!(dirs.iter().any(|d| d.ends_with("run/host/fonts")));
@@ -1147,41 +1163,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(target_env = "ohos")]
-    fn harmonyos_scans_the_system_font_library() {
-        assert_eq!(super::system_font_dirs(), [std::path::PathBuf::from("/system/fonts")]);
-    }
-
-    #[test]
-    fn directory_fonts_are_available_for_family_and_style_selection() {
-        use super::*;
-        let dir = std::env::temp_dir().join(format!("photocraft-font-scan-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("nested")).unwrap();
-        std::fs::write(dir.join("Regular.TTF"), INTER_REGULAR.as_slice()).unwrap();
-        std::fs::write(dir.join("nested/Medium.ttf"), INTER_MEDIUM.as_slice()).unwrap();
-        std::fs::write(dir.join("nested/Semibold.otf"), INTER_SEMIBOLD.as_slice()).unwrap();
-        std::fs::write(dir.join("Mono.ttf"), JETBRAINS_MONO_REGULAR.as_slice()).unwrap();
-        std::fs::write(dir.join("broken.ttf"), b"not a font").unwrap();
-        std::fs::write(dir.join("config.json"), b"{}").unwrap();
-        let mut files = Vec::new();
-        collect_font_files(&dir, 0, &mut files);
-        assert_eq!(files.len(), 5);
-        let mut db = FontDb::new();
-        // An empty collection proves the files were discovered, rather than using bundled faces.
-        db.fcx.collection = Collection::new(CollectionOptions { shared: false, system_fonts: false });
-        for path in files {
-            db.fcx.collection.load_fonts_from_paths([path]);
-        }
-        assert_eq!(db.families(), ["Inter", "JetBrains Mono"]);
-        let mut weights: Vec<_> = db.faces("Inter").into_iter().map(|face| face.weight as u32).collect();
-        weights.sort();
-        assert_eq!(weights, [400, 500, 600]);
-        assert_eq!(db.faces("JetBrains Mono").len(), 1);
-        assert_eq!(db.resolve_postscript("Inter-SemiBold").family, "Inter");
-        std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
     fn missing_font_dirs_are_skipped() {
         let mut files = Vec::new();
         super::collect_font_files(std::path::Path::new("/nonexistent/photocraft/fonts"), 0, &mut files);
@@ -1190,5 +1171,4 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "font_names_tests.rs"]
 mod font_names_tests;

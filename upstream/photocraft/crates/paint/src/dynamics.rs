@@ -21,6 +21,8 @@ pub const SPEED_SPACING_MS: f64 = 8.0;
 
 /// Longest pixel-grid segment (in pixels) before falling back to distance spacing.
 const MAX_GRID_STEPS: f64 = 1e7;
+/// Widest gap (in pixels) [`PathWalker::bridge`] fills between two pixel-grid segments.
+const MAX_BRIDGE: f64 = 4.0;
 
 /// Densest speed spacing, in pixels between dabs (a slow, long stroke never floods the buffer).
 const MIN_SPEED_STEP: f64 = 0.5;
@@ -242,6 +244,8 @@ pub struct PathWalker {
     /// Pixel-grid stepping for small aliased tips: the dab-centre offset inside a pixel (see
     /// [`PathWalker::pixel_grid`]).
     grid: Option<f64>,
+    /// The grid cell of the last pixel-grid step, so the next segment joins it (#8040).
+    cell: Option<(f64, f64)>,
 }
 
 impl PathWalker {
@@ -258,6 +262,7 @@ impl PathWalker {
             speed: None,
             speed_acc: 0.0,
             grid: None,
+            cell: None,
         }
     }
 
@@ -296,9 +301,30 @@ impl PathWalker {
             let mut q = lerp_pt(a, p, t.clamp(0.0, 1.0));
             let cn = grid_cell(an + dn * t, offset);
             (q.x, q.y) = if steep { (cn, c) } else { (c, cn) };
+            self.bridge(&q, out);
             self.emit(q, out);
         }
         true
+    }
+
+    /// Fills the pixels between the last grid step and `q` when they don't touch. Each segment
+    /// samples its own line, so where a freehand stroke turns, the last pixel of one segment and
+    /// the first of the next can sit two pixels apart, and the 1 px Pencil line breaks (#8040).
+    fn bridge(&mut self, q: &StrokePoint, out: &mut impl FnMut(StepInput)) {
+        let Some((mut x, mut y)) = self.cell else { return };
+        // Only a turn's small gap: a step cut off by the walker's budget is not filled in.
+        if (q.x - x).abs().max((q.y - y).abs()) > MAX_BRIDGE {
+            return;
+        }
+        while (q.x - x).abs() > 1.5 || (q.y - y).abs() > 1.5 {
+            if (q.x - x).abs() > 0.5 {
+                x += (q.x - x).signum();
+            }
+            if (q.y - y).abs() > 0.5 {
+                y += (q.y - y).signum();
+            }
+            self.emit(StrokePoint { x, y, ..*q }, out);
+        }
     }
 
     /// Space steps by stroke time instead of distance ([`SPEED_SPACING_MS`]): faster movement
@@ -309,6 +335,9 @@ impl PathWalker {
     }
 
     fn emit(&mut self, point: StrokePoint, out: &mut impl FnMut(StepInput)) {
+        if let Some(g) = self.grid {
+            self.cell = Some((grid_cell(point.x, g), grid_cell(point.y, g)));
+        }
         let s = StepInput { point, direction: self.dir, initial_direction: self.initial_dir.unwrap_or(self.dir), step: self.step };
         self.step += 1;
         out(s);
@@ -509,22 +538,10 @@ pub fn dynamic_color(b: &BrushSettings, s: &StepInput, seed: u64, index: u64) ->
 }
 
 /// Base (pre-jitter) diameter at a step: size × size control (pressure etc.). Drives spacing.
-///
-/// Shape Dynamics › Size › Pen Pressure only applies when [`BrushSettings::pressure_size`] is on
-/// (the options-bar Pressure for Size button). Off ignores that control so the button truly
-/// disables pressure→size, including for Pressure Size presets and the Eraser's own flags.
 pub fn base_diameter(b: &BrushSettings, s: &StepInput) -> f32 {
     let sd = &b.shape_dynamics;
     let mut f = 1.0;
-    let size_control = if sd.enabled {
-        match sd.size.control {
-            Control::PenPressure if !b.pressure_size => Control::Off,
-            c => c,
-        }
-    } else {
-        Control::Off
-    };
-    if size_control != Control::Off {
+    if sd.enabled && sd.size.control != Control::Off {
         let min = sd.size.minimum.clamp(0.0, 1.0);
         f = min + (1.0 - min) * dynamic_value(&sd.size, s);
     } else if b.pressure_size {
@@ -629,13 +646,7 @@ impl DabBuilder {
             let tr = &b.transfer;
             let (mut opacity, mut flow) = (1.0, b.flow);
             if tr.enabled {
-                // Transfer › Opacity › Pen Pressure only when pressure_opacity is on (options bar).
-                let opacity_dyn = if tr.opacity.control == Control::PenPressure && !b.pressure_opacity {
-                    Dynamic { control: Control::Off, ..tr.opacity }
-                } else {
-                    tr.opacity
-                };
-                opacity = scalar(&opacity_dyn, s, r(stream::OPACITY));
+                opacity = scalar(&tr.opacity, s, r(stream::OPACITY));
                 flow *= scalar(&tr.flow, s, r(stream::FLOW));
             }
             let (wet, mix) = if tr.enabled { (scalar(&tr.wetness, s, r(stream::WET)), scalar(&tr.mix, s, r(stream::MIX))) } else { (1.0, 1.0) };

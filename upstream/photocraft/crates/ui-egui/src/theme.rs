@@ -12,8 +12,6 @@
 //! - **Breeze** (Light and Dark): the Studio layout adapted to the look of KDE Plasma's Breeze
 //!   (blue-grey surfaces, Breeze blue accent, 5 px corners), so the app sits with the rest of a
 //!   Plasma desktop.
-//! - **ArkUI** (Light and Dark): the Breeze layout filled with HarmonyOS ArkUI system colours
-//!   (emphasize blue accent, background / sub_background surfaces), the default on HarmonyOS.
 //!
 //! - **Pro (Light Gray)** and **Pro (Light)**: Photoshop's third and fourth interface brightness
 //!   levels (#B8B8B8 and #F0F0F0 panels) with the Pro layout (#2661).
@@ -54,18 +52,10 @@ pub enum ThemeKind {
     SoftDark,
     /// A low-contrast light theme: pale violet-grey surfaces, softened dark text and a periwinkle accent.
     SoftLight,
-    /// HarmonyOS ArkUI light system colours on the Breeze / Studio layout.
-    ArkuiLight,
-    /// HarmonyOS ArkUI dark system colours on the Breeze / Studio layout.
-    ArkuiDark,
-    /// ArkUI light colours with the Photoshop-grammar Pro layout.
-    ArkuiProLight,
-    /// ArkUI dark colours with the Photoshop-grammar Pro layout.
-    ArkuiProDark,
 }
 
 impl ThemeKind {
-    pub const ALL: [ThemeKind; 18] = [
+    pub const ALL: [ThemeKind; 14] = [
         ThemeKind::Pro,
         ThemeKind::ProMedium,
         ThemeKind::ProLightGray,
@@ -80,10 +70,6 @@ impl ThemeKind {
         ThemeKind::BreezeDark,
         ThemeKind::SoftDark,
         ThemeKind::SoftLight,
-        ThemeKind::ArkuiLight,
-        ThemeKind::ArkuiDark,
-        ThemeKind::ArkuiProLight,
-        ThemeKind::ArkuiProDark,
     ];
     pub fn label(self) -> &'static str {
         match self {
@@ -101,10 +87,6 @@ impl ThemeKind {
             ThemeKind::BreezeDark => "Breeze Dark",
             ThemeKind::SoftDark => "Soft Dark",
             ThemeKind::SoftLight => "Soft Light",
-            ThemeKind::ArkuiLight => "ArkUI Light",
-            ThemeKind::ArkuiDark => "ArkUI Dark",
-            ThemeKind::ArkuiProLight => "ArkUI Pro Light",
-            ThemeKind::ArkuiProDark => "ArkUI Pro Dark",
         }
     }
     /// The canonical name: `ui.set {theme}` accepts it and the Window › Theme commands are
@@ -125,23 +107,11 @@ impl ThemeKind {
             ThemeKind::BreezeDark => "breezeDark",
             ThemeKind::SoftDark => "softDark",
             ThemeKind::SoftLight => "softLight",
-            ThemeKind::ArkuiLight => "arkuiLight",
-            ThemeKind::ArkuiDark => "arkuiDark",
-            ThemeKind::ArkuiProLight => "arkuiProLight",
-            ThemeKind::ArkuiProDark => "arkuiProDark",
         }
     }
     /// Photoshop-grammar layout (tab strips, flat panels): the four Pro brightness levels.
     pub fn is_pro(self) -> bool {
-        matches!(
-            self,
-            ThemeKind::Pro
-                | ThemeKind::ProMedium
-                | ThemeKind::ProLightGray
-                | ThemeKind::ProLight
-                | ThemeKind::ArkuiProLight
-                | ThemeKind::ArkuiProDark
-        )
+        matches!(self, ThemeKind::Pro | ThemeKind::ProMedium | ThemeKind::ProLightGray | ThemeKind::ProLight)
     }
     /// Whether this theme belongs to the dark appearance family.
     pub fn is_dark(self) -> bool {
@@ -154,8 +124,6 @@ impl ThemeKind {
                 | ThemeKind::AdwaitaDark
                 | ThemeKind::BreezeDark
                 | ThemeKind::SoftDark
-                | ThemeKind::ArkuiDark
-                | ThemeKind::ArkuiProDark
         )
     }
     /// Whether this theme belongs to the light appearance family.
@@ -165,12 +133,6 @@ impl ThemeKind {
     pub fn next(self) -> Self {
         let i = Self::ALL.iter().position(|k| *k == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]
-    }
-    /// `#RRGGBB` of the window chrome (title bar and status bar). A host uses it to colour the
-    /// system status bar and navigation indicator so they meet the app edge.
-    pub fn chrome_css(self) -> String {
-        let c = Tokens::for_kind(self).chrome;
-        format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
     }
     pub fn from_name(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().replace([' ', '_', '-', '(', ')'], "").as_str() {
@@ -188,12 +150,6 @@ impl ThemeKind {
             "breezedark" | "kdedark" | "plasmadark" => Some(ThemeKind::BreezeDark),
             "softdark" => Some(ThemeKind::SoftDark),
             "softlight" => Some(ThemeKind::SoftLight),
-            "arkuiprolight" | "arkuiprolighttheme" => Some(ThemeKind::ArkuiProLight),
-            "arkuiprodark" | "arkuiprodarktheme" => Some(ThemeKind::ArkuiProDark),
-            "arkuilight" | "arkui" | "harmony" | "harmonyos" | "harmonyoslight" | "ohos" | "ohoslight" => {
-                Some(ThemeKind::ArkuiLight)
-            }
-            "arkuidark" | "harmonydark" | "harmonyosdark" | "ohosdark" => Some(ThemeKind::ArkuiDark),
             _ => None,
         }
     }
@@ -233,8 +189,6 @@ pub struct Tokens {
     pub primary_text: Color32,
     pub danger: Color32,
     pub warning: Color32,
-    /// Presence indicator (a stylus is attached). The same green on every theme.
-    pub online: Color32,
     pub radius_sm: f32,
     pub radius: f32,
     pub radius_lg: f32,
@@ -364,7 +318,6 @@ impl Tokens {
                 primary_text: Color32::WHITE,
                 danger: Color32::from_rgb(236, 91, 98),
                 warning: Color32::from_rgb(232, 176, 70),
-                online: Color32::from_rgb(46, 184, 92),
                 radius_sm: 3.0,
                 radius: 4.0,
                 radius_lg: 6.0,
@@ -405,13 +358,14 @@ impl Tokens {
                 primary_text: Color32::from_rgb(12, 12, 14),
                 danger: Color32::from_rgb(240, 96, 96),
                 warning: Color32::from_rgb(240, 190, 90),
-                online: Color32::from_rgb(46, 184, 92),
                 radius_sm: 6.0,
                 radius: 8.0,
                 radius_lg: 12.0,
                 bevel: false,
                 pro: false,
-                round_chips: true,
+                // Studio Dark uses the compact overlapping square foreground/background
+                // chips rather than the large stacked circles (#3494).
+                round_chips: false,
                 tab_strip: Color32::TRANSPARENT,
                 row_selected: Color32::TRANSPARENT,
                 histogram_bg: Color32::from_rgb(14, 14, 15),
@@ -446,7 +400,6 @@ impl Tokens {
                 primary_text: Color32::from_rgb(250, 250, 252),
                 danger: Color32::from_rgb(210, 60, 60),
                 warning: Color32::from_rgb(190, 130, 20),
-                online: Color32::from_rgb(46, 184, 92),
                 radius_sm: 6.0,
                 radius: 8.0,
                 radius_lg: 12.0,
@@ -487,7 +440,6 @@ impl Tokens {
                 primary_text: Color32::BLACK,
                 danger: Color32::from_rgb(160, 0, 0),
                 warning: Color32::from_rgb(128, 96, 0),
-                online: Color32::from_rgb(46, 184, 92),
                 radius_sm: 0.0,
                 radius: 0.0,
                 radius_lg: 0.0,
@@ -506,7 +458,6 @@ impl Tokens {
             // radii (6 px buttons, 12 px cards), mapped onto the Studio layout. GNOME's close
             // button is a neutral circle, not a red one, so the caption colours stay grey.
             ThemeKind::Adwaita => Tokens {
-                online: Color32::from_rgb(80, 190, 125),
                 kind,
                 chrome: Color32::WHITE,
                 canvas: Color32::from_rgb(222, 222, 223),
@@ -547,7 +498,6 @@ impl Tokens {
                 scrim: Color32::from_black_alpha(110),
             },
             ThemeKind::AdwaitaDark => Tokens {
-                online: Color32::from_rgb(80, 190, 125),
                 kind,
                 chrome: Color32::from_rgb(46, 46, 50),
                 canvas: Color32::from_rgb(29, 29, 32),
@@ -619,7 +569,6 @@ impl Tokens {
                 primary_text: Color32::WHITE,
                 danger: Color32::from_rgb(170, 50, 64),
                 warning: Color32::from_rgb(153, 72, 0),
-                online: Color32::from_rgb(46, 184, 92),
                 radius_sm: 5.0,
                 radius: 5.0,
                 radius_lg: 6.0,
@@ -670,7 +619,6 @@ impl Tokens {
                 primary_text: Color32::WHITE,
                 danger: Color32::from_rgb(227, 111, 123),
                 warning: Color32::from_rgb(244, 120, 6),
-                online: Color32::from_rgb(80, 190, 125),
                 radius_sm: 5.0,
                 radius: 5.0,
                 radius_lg: 6.0,
@@ -685,125 +633,10 @@ impl Tokens {
                 caption_close_text: Color32::WHITE,
                 scrim: Color32::from_black_alpha(110),
             },
-
-            // HarmonyOS ArkUI light system colours mapped into the Breeze / Studio token slots:
-            // background chrome, sub_background canvas/dock, emphasize blue accent.
-            ThemeKind::ArkuiLight => Tokens {
-                kind,
-                chrome: Color32::from_rgb(255, 255, 255),
-                // Recessed from white chrome; dots darker like Studio Light so the grid reads.
-                canvas: Color32::from_rgb(232, 235, 239),
-                canvas_dot: Color32::from_rgb(206, 211, 217),
-                dock: Color32::from_rgb(241, 243, 245),
-                card: Color32::from_rgb(255, 255, 255),
-                card_border: Color32::from_rgb(229, 229, 229),
-                field: Color32::from_rgb(241, 243, 245),
-                field_border: Color32::from_rgb(214, 214, 214),
-                hover: Color32::from_rgb(232, 235, 240),
-                pressed: Color32::from_rgb(220, 225, 232),
-                text: Color32::from_rgb(0, 0, 0),
-                text_dim: Color32::from_rgb(92, 92, 92),
-                text_faint: Color32::from_rgb(138, 138, 138),
-                icon: Color32::from_rgb(26, 26, 26),
-                accent: Color32::from_rgb(10, 89, 247),
-                accent_soft: Color32::from_rgba_unmultiplied(10, 89, 247, 51),
-                accent_border: Color32::from_rgba_unmultiplied(10, 89, 247, 170),
-                accent_text: Color32::from_rgb(8, 75, 207),
-                separator: Color32::from_rgb(229, 229, 229),
-                shadow: Color32::from_black_alpha(45),
-                primary_bg: Color32::from_rgb(8, 75, 207),
-                primary_text: Color32::WHITE,
-                danger: Color32::from_rgb(232, 64, 38),
-                warning: Color32::from_rgb(237, 111, 33),
-                online: Color32::from_rgb(46, 184, 92),
-                radius_sm: 10.0,
-                radius: 12.0,
-                radius_lg: 12.0,
-                bevel: false,
-                pro: false,
-                round_chips: true,
-                tab_strip: Color32::TRANSPARENT,
-                row_selected: Color32::TRANSPARENT,
-                histogram_bg: Color32::from_rgb(232, 235, 239),
-                histogram_level: 240,
-                caption_close: Color32::from_rgb(232, 64, 38),
-                caption_close_text: Color32::WHITE,
-                scrim: Color32::from_black_alpha(110),
-            },
-            // HarmonyOS ArkUI dark system colours on the same Breeze / Studio layout.
-            ThemeKind::ArkuiDark => Tokens {
-                kind,
-                chrome: Color32::from_rgb(0, 0, 0),
-                // Lifted off pure-black chrome; lighter dots like Studio Dark for the coordinate grid.
-                canvas: Color32::from_rgb(12, 12, 14),
-                canvas_dot: Color32::from_rgb(44, 44, 48),
-                dock: Color32::from_rgb(20, 20, 20),
-                card: Color32::from_rgb(26, 26, 26),
-                card_border: Color32::from_rgb(42, 42, 42),
-                field: Color32::from_rgb(34, 34, 34),
-                field_border: Color32::from_rgb(58, 58, 58),
-                hover: Color32::from_rgb(42, 42, 42),
-                pressed: Color32::from_rgb(51, 51, 51),
-                text: Color32::WHITE,
-                text_dim: Color32::from_rgb(192, 192, 192),
-                text_faint: Color32::from_rgb(140, 140, 140),
-                icon: Color32::from_rgb(229, 229, 229),
-                accent: Color32::from_rgb(49, 122, 247),
-                accent_soft: Color32::from_rgba_unmultiplied(49, 122, 247, 64),
-                accent_border: Color32::from_rgba_unmultiplied(49, 122, 247, 160),
-                accent_text: Color32::from_rgb(122, 176, 255),
-                separator: Color32::from_rgb(34, 34, 34),
-                shadow: Color32::from_black_alpha(150),
-                primary_bg: Color32::from_rgb(31, 113, 255),
-                primary_text: Color32::WHITE,
-                danger: Color32::from_rgb(217, 72, 56),
-                warning: Color32::from_rgb(219, 107, 66),
-                online: Color32::from_rgb(80, 190, 125),
-                radius_sm: 10.0,
-                radius: 12.0,
-                radius_lg: 12.0,
-                bevel: false,
-                pro: false,
-                round_chips: true,
-                tab_strip: Color32::TRANSPARENT,
-                row_selected: Color32::TRANSPARENT,
-                histogram_bg: Color32::from_rgb(12, 12, 14),
-                histogram_level: 225,
-                caption_close: Color32::from_rgb(217, 72, 56),
-                caption_close_text: Color32::WHITE,
-                scrim: Color32::from_black_alpha(110),
-            },
-            // ArkUI colours on the Pro (Photoshop-grammar) layout: Pro radii / tab strips /
-            // flat chips, keeping the tuned ArkUI palette (including canvas dots).
-            ThemeKind::ArkuiProLight => Tokens {
-                kind,
-                radius_sm: 3.0,
-                radius: 4.0,
-                radius_lg: 6.0,
-                bevel: false,
-                pro: true,
-                round_chips: false,
-                tab_strip: Color32::from_rgb(241, 243, 245),
-                row_selected: Color32::from_rgb(232, 235, 240),
-                ..Tokens::for_kind(ThemeKind::ArkuiLight)
-            },
-            ThemeKind::ArkuiProDark => Tokens {
-                kind,
-                radius_sm: 3.0,
-                radius: 4.0,
-                radius_lg: 6.0,
-                bevel: false,
-                pro: true,
-                round_chips: false,
-                tab_strip: Color32::from_rgb(20, 20, 20),
-                row_selected: Color32::from_rgb(42, 42, 42),
-                ..Tokens::for_kind(ThemeKind::ArkuiDark)
-            },
             // Soft Dark: our own low-contrast palette on the Studio layout. Muted violet-grey
             // surfaces (never near-black), softened off-white text and a periwinkle accent; the
             // text colours still hold 4.5:1 on every surface (checked by the tests).
             ThemeKind::SoftDark => Tokens {
-                online: Color32::from_rgb(80, 190, 125),
                 kind,
                 chrome: Color32::from_rgb(58, 58, 68),
                 canvas: Color32::from_rgb(40, 40, 48),
@@ -846,7 +679,6 @@ impl Tokens {
             // Soft Light: pale violet-grey surfaces, softened dark-violet text (not black) and a
             // periwinkle accent, with the same generous radii as Soft Dark.
             ThemeKind::SoftLight => Tokens {
-                online: Color32::from_rgb(30, 140, 80),
                 kind,
                 chrome: Color32::from_rgb(232, 230, 236),
                 canvas: Color32::from_rgb(218, 216, 224),
@@ -890,7 +722,6 @@ impl Tokens {
             // body text and the Solarized blue accent. https://ethanschoonover.com/solarized/
             // (MIT; see LICENSE-solarized.txt)
             ThemeKind::SolarizedDark => Tokens {
-                online: Color32::from_rgb(80, 190, 125),
                 kind,
                 chrome: Color32::from_rgb(7, 54, 66),
                 canvas: Color32::from_rgb(0, 43, 54),
@@ -935,7 +766,7 @@ impl Tokens {
 
     /// Tokens for the active theme (stored in egui's context data by [`apply`]).
     pub fn get(ctx: &egui::Context) -> Tokens {
-        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::new("photocraft-theme"))).unwrap_or_else(|| Tokens::for_kind(ThemeKind::Studio))
+        ctx.data(|d| d.get_temp::<Tokens>(egui::Id::unique("photocraft-theme"))).unwrap_or_else(|| Tokens::for_kind(ThemeKind::Studio))
     }
 
     /// Thin RGB outlines; the filled bands use the same hues with subdued coverage.
@@ -985,11 +816,6 @@ impl Tokens {
 
     pub fn histogram_background(&self) -> Color32 {
         self.histogram_bg
-    }
-
-    /// Menu highlights keep dark labels readable in the ArkUI light palettes.
-    pub fn menu_hover(&self) -> Color32 {
-        if matches!(self.kind, ThemeKind::ArkuiLight | ThemeKind::ArkuiProLight) { Color32::from_rgb(225, 237, 255) } else { self.hover }
     }
 
     /// The background behind selected text in a text field (#3789): a subtle shade rather than
@@ -1048,6 +874,19 @@ pub fn install_fonts_with(ctx: &egui::Context, cjk: crate::cjk_fonts::Sources) {
     if let Some(mono) = mono {
         fonts.families.entry(FontFamily::Monospace).or_default().insert(0, mono);
     }
+    // The optional craft-fonts input carries Japanese, Simplified Chinese, Korean, Arabic, Thai and
+    // other faces. They are not registered into this static stack: `cjk_fonts` installs a
+    // per-character font provider for them, so a broad Simplified Chinese face is not put in the
+    // family stack ahead of the Japanese or Korean face, and a locale without a Traditional Chinese
+    // craft face leaves Han to the system font. (A single linear per-family chain still decides a
+    // glyph once a broad face is discovered; see `cjk_fonts`.)
+    // Served script fallbacks the web build has received (Arabic, Japanese…), after everything else.
+    for (name, data) in crate::served_fonts::ui_faces() {
+        fonts.font_data.insert(name.clone(), data);
+        for family in [FontFamily::Proportional, FontFamily::Monospace] {
+            fonts.families.entry(family).or_default().push(name.clone());
+        }
+    }
     // Named weights fall back to the default stack for missing glyphs.
     let fallback: Vec<String> = fonts.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     for (fam, primary) in [("medium", medium), ("semibold", semibold)] {
@@ -1074,8 +913,6 @@ pub fn install_fonts_with(ctx: &egui::Context, cjk: crate::cjk_fonts::Sources) {
     // CJK, Thai, Arabic, Indic and other script fallback fonts (craft-fonts' Japanese ones if built in, then
     // the system's) are registered on demand (cjk_fonts.rs).
     crate::cjk_fonts::install_with(ctx, cjk);
-    // set_fonts drops fonts added earlier. Put HarmonyOS Sans back if the web host has supplied it.
-    crate::cjk_fonts::reapply_host_fonts(ctx);
 }
 
 /// Has [`install_fonts`]'s stack reached the active fonts? Before that (the first pass, when
@@ -1086,11 +923,16 @@ fn ui_fonts_active(ctx: &egui::Context) -> bool {
 }
 
 fn ui_fonts_id() -> egui::Id {
-    egui::Id::new("photocraft-ui-fonts")
+    egui::Id::unique("photocraft-ui-fonts")
 }
 
 fn ui_font_size(ctx: &egui::Context) -> UiFontSize {
     ctx.data(|d| d.get_temp::<UiFontSize>(ui_fonts_id())).unwrap_or_default()
+}
+
+/// The Interface > UI Font Size multiplier for the current context (including the default Small).
+pub(crate) fn ui_font_scale(ctx: &egui::Context) -> f32 {
+    font_scale(ui_font_size(ctx))
 }
 
 fn font_scale(size: UiFontSize) -> f32 {
@@ -1154,6 +996,10 @@ impl egui::Plugin for UiFontSizePlugin {
             Arc::make_mut(data).tweak.scale = original * font_scale(size);
         }
         ctx.set_fonts(fonts);
+        // The provider must use the scale of the definitions that were active while this pass
+        // laid out text. A face it discovers during the pass is inserted at that old scale; after
+        // `set_fonts` the rescaled definitions take effect and the provider follows them.
+        crate::cjk_fonts::set_craft_font_scale(ctx, font_scale(size));
         self.applied = size;
         ctx.request_repaint();
     }
@@ -1175,7 +1021,7 @@ pub fn apply(ctx: &egui::Context, kind: ThemeKind) {
     // including when an integration or restored egui state pinned its own theme preference.
     ctx.set_theme(egui::ThemePreference::System);
     let t = Tokens::for_kind(kind);
-    ctx.data_mut(|d| d.insert_temp(egui::Id::new("photocraft-theme"), t));
+    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("photocraft-theme"), t));
     let mut v = if t.dark() { Visuals::dark() } else { Visuals::light() };
     v.panel_fill = t.chrome;
     v.window_fill = t.card;
@@ -1267,453 +1113,7 @@ pub fn canvas_bg(t: &Tokens) -> Color32 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn text_sizes(ctx: &egui::Context) -> Vec<egui::Vec2> {
-        let mut sizes = Vec::new();
-        // The plugin queues changed fonts at the end of a pass; egui applies them next pass.
-        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
-        ctx.run_ui(Default::default(), |ui| {
-            // Include custom painter fonts and explicit RichText sizes, not just text styles.
-            for font in [FontId::proportional(11.5), medium(12.0), semibold(15.0), mono(12.0), TextStyle::Body.resolve(ui.style())] {
-                sizes.push(ui.painter().layout_no_wrap("Interface 123".into(), font, Color32::WHITE).size());
-            }
-            sizes.push(ui.label(egui::RichText::new("Interface 123").size(13.0)).rect.size());
-        })
-        .textures_delta
-        .clear();
-        sizes
-    }
-
-    #[test]
-    fn ui_font_sizes_scale_shaping_and_row_height_without_accumulating() {
-        let ctx = egui::Context::default();
-        install_fonts(&ctx);
-        apply(&ctx, ThemeKind::Pro);
-        let original = text_sizes(&ctx);
-        let definitions = ctx.fonts(|f| f.definitions().clone());
-        for size in [UiFontSize::Tiny, UiFontSize::Small, UiFontSize::Medium, UiFontSize::Large, UiFontSize::Tiny, UiFontSize::Small] {
-            set_ui_font_size(&ctx, size);
-            let measured = text_sizes(&ctx);
-            for (before, after) in original.iter().zip(&measured) {
-                let expected = *before * font_scale(size);
-                assert!((after.x - expected.x).abs() < 1.0, "{size:?}: width {after:?} vs {expected:?}");
-                // egui rounds ascent/descent and the final row height to pixels separately.
-                assert!((after.y - expected.y).abs() < 1.1, "{size:?}: height {after:?} vs {expected:?}");
-            }
-            set_ui_font_size(&ctx, size);
-            assert_eq!(text_sizes(&ctx), measured, "setting the same size twice is stable");
-        }
-        assert_eq!(ctx.fonts(|f| f.definitions().clone()), definitions, "Small restores original font tweaks exactly");
-        assert_eq!(ctx.zoom_factor(), 1.0);
-    }
-
-    /// The desktop app installs fonts and loads the saved UI Font Size in its first frame, while
-    /// egui's default fonts are still active. Any size but Small then panicked on the next pass
-    /// ("FontFamily::Name("medium") is not bound to any fonts") because the plugin rescaled a
-    /// copy of the defaults and that replaced the queued Inter stack.
-    #[test]
-    fn saved_ui_font_size_survives_first_frame_install() {
-        let ctx = egui::Context::default();
-        let medium_bound = |ctx: &egui::Context| ctx.fonts(|f| f.families().contains(&FontFamily::Name("medium".into())));
-        ctx.run_ui(Default::default(), |ui| {
-            assert!(!medium_bound(ui.ctx()), "egui's defaults are active in the first frame");
-            install_fonts(ui.ctx());
-            apply(ui.ctx(), ThemeKind::Pro);
-            set_ui_font_size(ui.ctx(), UiFontSize::Medium);
-        })
-        .textures_delta
-        .clear();
-        let mut width = 0.0;
-        ctx.run_ui(Default::default(), |ui| {
-            assert!(medium_bound(ui.ctx()), "the installed stack reaches the second pass");
-            width = ui.painter().layout_no_wrap("PhotoCraft".into(), medium(13.0), Color32::WHITE).size().x;
-        })
-        .textures_delta
-        .clear();
-        assert!(width > 0.0);
-        // The saved size applies one pass later, from the installed stack.
-        ctx.run_ui(Default::default(), |_| {}).textures_delta.clear();
-        let mut scaled = 0.0;
-        ctx.run_ui(Default::default(), |ui| {
-            assert!(medium_bound(ui.ctx()));
-            scaled = ui.painter().layout_no_wrap("PhotoCraft".into(), medium(13.0), Color32::WHITE).size().x;
-        })
-        .textures_delta
-        .clear();
-        assert!((scaled - width * font_scale(UiFontSize::Medium)).abs() < 1.0, "{scaled} vs {width} × 14/12");
-        // Re-installing (a language change) keeps the size and the named families.
-        ctx.run_ui(Default::default(), |ui| install_fonts(ui.ctx())).textures_delta.clear();
-        for _ in 0..2 {
-            ctx.run_ui(Default::default(), |ui| {
-                assert!(medium_bound(ui.ctx()));
-                let w = ui.painter().layout_no_wrap("PhotoCraft".into(), medium(13.0), Color32::WHITE).size().x;
-                assert!((w - scaled).abs() < 1.0, "{w} vs {scaled}");
-            })
-            .textures_delta
-            .clear();
-        }
-    }
-
-    #[test]
-    fn pro_light_gray_and_light_themes() {
-        // #2661: Photoshop's third and fourth brightness levels, with the Pro layout.
-        for (kind, panel, id, label) in
-            [(ThemeKind::ProLightGray, 184, "proLightGray", "Pro (Light Gray)"), (ThemeKind::ProLight, 240, "proLight", "Pro (Light)")]
-        {
-            let t = Tokens::for_kind(kind);
-            assert!(t.pro && !t.dark() && !t.bevel && kind.is_pro(), "{kind:?}");
-            assert_eq!((t.kind, t.card, t.chrome), (kind, Color32::from_gray(panel), Color32::from_gray(panel)));
-            assert_eq!((kind.id(), kind.label()), (id, label));
-            assert_eq!(ThemeKind::from_name(id), Some(kind));
-            assert_eq!(ThemeKind::from_name(label), Some(kind));
-            assert!(ThemeKind::ALL.contains(&kind));
-            // Text stays readable (WCAG AA for body text, 3:1 for dim and faint labels and icons).
-            for bg in [t.card, t.chrome, t.dock, t.field, t.hover, t.row_selected, t.tab_strip] {
-                assert!(contrast(t.text, bg) >= 4.5, "{kind:?} text on {bg:?}: {}", contrast(t.text, bg));
-                assert!(contrast(t.icon, bg) >= 3.0, "{kind:?} icon on {bg:?}");
-                assert!(contrast(t.text_dim, bg) >= 3.0, "{kind:?} dim text on {bg:?}");
-            }
-            assert!(contrast(t.text_faint, t.card) >= 2.0, "{kind:?} faint text");
-            assert!(contrast(t.accent_text, t.card) >= 3.0, "{kind:?} accent text");
-        }
-        // The four Pro levels step from darkest to lightest, as in Photoshop.
-        let cards = [ThemeKind::Pro, ThemeKind::ProMedium, ThemeKind::ProLightGray, ThemeKind::ProLight].map(|k| Tokens::for_kind(k).card.r());
-        assert!(cards.windows(2).all(|w| w[0] < w[1]), "{cards:?}");
-        assert!(!ThemeKind::Studio.is_pro() && !ThemeKind::StudioLight.is_pro() && !ThemeKind::Classic.is_pro());
-        assert_eq!(ThemeKind::from_name("light gray"), Some(ThemeKind::ProLightGray));
-        assert_eq!(ThemeKind::from_name("lightest"), Some(ThemeKind::ProLight));
-    }
-
-    #[test]
-    fn field_selection_is_grey_only_for_the_monochrome_pro_themes() {
-        // #3789: a text field's selection is a subtle grey in the monochrome Pro themes, not a
-        // second blue accent; coloured themes keep their accent.
-        assert_eq!(Tokens::for_kind(ThemeKind::Pro).field_selection(), Color32::from_gray(96));
-        assert_eq!(Tokens::for_kind(ThemeKind::ProLight).field_selection(), Color32::from_gray(201));
-        assert_eq!(Tokens::for_kind(ThemeKind::Studio).field_selection(), Tokens::for_kind(ThemeKind::Studio).accent_soft);
-        assert_eq!(Tokens::for_kind(ThemeKind::Classic).field_selection(), Tokens::for_kind(ThemeKind::Classic).accent_soft);
-    }
-
-    #[test]
-    fn theme_names_parse() {
-        assert_eq!(ThemeKind::from_name("Classic"), Some(ThemeKind::Classic));
-        assert_eq!(ThemeKind::from_name("studio (light)"), Some(ThemeKind::StudioLight));
-        assert_eq!(ThemeKind::from_name("dark"), Some(ThemeKind::Pro));
-        assert_eq!(ThemeKind::from_name("light"), Some(ThemeKind::ProLight));
-        assert_eq!(ThemeKind::from_name("studio"), Some(ThemeKind::Studio));
-        assert_eq!(ThemeKind::from_name("Pro (Medium Gray)"), Some(ThemeKind::ProMedium));
-        assert_eq!(ThemeKind::from_name("Solarized Dark"), Some(ThemeKind::SolarizedDark));
-        assert_eq!(ThemeKind::from_name("solarized"), Some(ThemeKind::SolarizedDark));
-        let m = Tokens::for_kind(ThemeKind::ProMedium);
-        assert!(m.pro && m.dark() && m.kind == ThemeKind::ProMedium && m.card == Color32::from_rgb(83, 83, 83));
-        let s = Tokens::for_kind(ThemeKind::SolarizedDark);
-        assert!(s.dark() && !s.bevel && s.kind == ThemeKind::SolarizedDark && s.card == Color32::from_rgb(7, 54, 66));
-        assert_eq!(ThemeKind::from_name("neon"), None);
-        assert_eq!(ThemeKind::Pro.chrome_css(), "#323232");
-        assert_eq!(ThemeKind::ProMedium.chrome_css(), "#535353");
-        assert_eq!(ThemeKind::Studio.chrome_css(), "#141415");
-        assert_eq!(ThemeKind::StudioLight.chrome_css(), "#F6F6F8");
-        assert_eq!(ThemeKind::Classic.chrome_css(), "#D4D0C8");
-    }
-
-    #[test]
-    fn every_palette_keeps_complete_egui_styles_when_the_os_changes() {
-        for kind in ThemeKind::ALL {
-            let ctx = egui::Context::default();
-            ctx.run_ui(egui::RawInput { system_theme: Some(egui::Theme::Dark), ..Default::default() }, |ui| apply(ui.ctx(), kind)).textures_delta.clear();
-            let expected = ctx.global_style();
-            for appearance in [Some(egui::Theme::Light), Some(egui::Theme::Dark), None] {
-                ctx.run_ui(egui::RawInput { system_theme: appearance, ..Default::default() }, |_| {}).textures_delta.clear();
-                assert_eq!(Tokens::get(&ctx), Tokens::for_kind(kind));
-                assert_eq!(ctx.global_style(), expected, "{kind:?} changed with {appearance:?}");
-                assert_eq!(ctx.style_of(egui::Theme::Light), expected);
-                assert_eq!(ctx.style_of(egui::Theme::Dark), expected);
-            }
-        }
-    }
-
-    #[test]
-    fn applying_a_palette_clears_a_pinned_native_appearance_preference() {
-        for pinned in [egui::Theme::Light, egui::Theme::Dark] {
-            let ctx = egui::Context::default();
-            ctx.set_theme(pinned);
-            apply(&ctx, ThemeKind::ProMedium);
-            assert_eq!(ctx.options(|o| o.theme_preference), egui::ThemePreference::System);
-        }
-    }
-
-    #[test]
-    fn studio_text_contrast_is_high() {
-        let t = Tokens::for_kind(ThemeKind::Studio);
-        let p = Tokens::for_kind(ThemeKind::Pro);
-        assert!(p.pro && !t.pro);
-        let lum = |c: Color32| 0.2126 * c.r() as f32 + 0.7152 * c.g() as f32 + 0.0722 * c.b() as f32;
-        assert!(lum(t.text) - lum(t.card) > 180.0);
-        assert!(lum(t.text_dim) - lum(t.card) > 90.0);
-    }
-
-    /// WCAG 2 contrast ratio, the measure libadwaita's own palette is held to.
-    fn contrast(a: Color32, b: Color32) -> f32 {
-        let lin = |v: u8| {
-            let c = f32::from(v) / 255.0;
-            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
-        };
-        let lum = |c: Color32| 0.2126 * lin(c.r()) + 0.7152 * lin(c.g()) + 0.0722 * lin(c.b());
-        let (hi, lo) = if lum(a) > lum(b) { (lum(a), lum(b)) } else { (lum(b), lum(a)) };
-        (hi + 0.05) / (lo + 0.05)
-    }
-
-    /// The light themes outline their white slider knob so its edge holds WCAG's 3:1 non-text
-    /// contrast against the panels sliders sit on (#7927); the dark ones keep the plain knob.
-    #[test]
-    fn light_themes_outline_the_slider_knob() {
-        for kind in ThemeKind::ALL {
-            let t = Tokens::for_kind(kind);
-            // The Pro layouts keep their dark ring (it rims a grey knob), Classic its bevelled knob.
-            if t.pro || t.bevel {
-                continue;
-            }
-            match t.knob_outline() {
-                Some(outline) => {
-                    assert!(!t.dark(), "{kind:?}");
-                    for panel in [t.dock, t.card, t.chrome] {
-                        assert!(contrast(outline, panel) >= 3.0, "{kind:?}: knob outline {outline:?} on {panel:?}");
-                    }
-                }
-                None => assert!(t.dark(), "{kind:?}: a light theme without a knob outline"),
-            }
-        }
-        assert_eq!(Tokens::for_kind(ThemeKind::Pro).knob_outline(), Some(Color32::from_gray(40)), "Pro is unchanged");
-        for kind in [ThemeKind::StudioLight, ThemeKind::Adwaita, ThemeKind::BreezeLight, ThemeKind::SoftLight] {
-            assert!(Tokens::for_kind(kind).knob_outline().is_some(), "{kind:?}");
-        }
-    }
-
-    #[test]
-    fn adwaita_themes_parse_and_meet_text_contrast() {
-        for kind in [ThemeKind::Adwaita, ThemeKind::AdwaitaDark] {
-            assert_eq!(ThemeKind::from_name(kind.id()), Some(kind));
-            assert_eq!(ThemeKind::from_name(kind.label()), Some(kind));
-            let t = Tokens::for_kind(kind);
-            assert_eq!(t.kind, kind);
-            assert_eq!(t.dark(), kind == ThemeKind::AdwaitaDark);
-            assert!(!t.pro && !t.bevel, "{kind:?} uses the Studio layout");
-            // AA body text (4.5:1) on every surface that carries labels.
-            for surface in [t.chrome, t.dock, t.card, t.field] {
-                assert!(contrast(t.text, surface) >= 7.0, "{kind:?}: text on {surface:?}");
-                assert!(contrast(t.text_dim, surface) >= 4.5, "{kind:?}: dim text on {surface:?}");
-            }
-            assert!(contrast(t.primary_text, t.primary_bg) >= 3.0, "{kind:?}: suggested-action button label");
-        }
-        assert_eq!(ThemeKind::from_name("gnome dark"), Some(ThemeKind::AdwaitaDark));
-    }
-
-    #[test]
-    fn arkui_light_menu_highlights_keep_dark_text_readable() {
-        for kind in [ThemeKind::ArkuiLight, ThemeKind::ArkuiProLight] {
-            let t = Tokens::for_kind(kind);
-            assert_eq!(t.menu_hover(), Color32::from_rgb(225, 237, 255));
-            assert!(contrast(t.text, t.menu_hover()) >= 7.0, "{kind:?}: menu label contrast");
-            assert!(contrast(t.text_dim, t.menu_hover()) >= 4.5, "{kind:?}: shortcut contrast");
-        }
-        for kind in ThemeKind::ALL {
-            if !matches!(kind, ThemeKind::ArkuiLight | ThemeKind::ArkuiProLight) {
-                let t = Tokens::for_kind(kind);
-                assert_eq!(t.menu_hover(), t.hover, "{kind:?}: preserve other palettes");
-            }
-        }
-    }
-
-    #[test]
-    fn arkui_themes_parse_and_use_breeze_layout() {
-        for (kind, aliases, accent, chrome) in [
-            (
-                ThemeKind::ArkuiLight,
-                ["arkui", "ArkUI Light", "arkui_light", "harmonyos", "ohos"],
-                Color32::from_rgb(10, 89, 247),
-                Color32::WHITE,
-            ),
-            (
-                ThemeKind::ArkuiDark,
-                ["arkui dark", "ArkUI Dark", "arkui_dark", "harmonyos dark", "ohos-dark"],
-                Color32::from_rgb(49, 122, 247),
-                Color32::BLACK,
-            ),
-        ] {
-            assert_eq!(ThemeKind::from_name(kind.id()), Some(kind));
-            assert_eq!(ThemeKind::from_name(kind.label()), Some(kind));
-            for alias in aliases {
-                assert_eq!(ThemeKind::from_name(alias), Some(kind), "{alias}");
-            }
-            assert!(ThemeKind::ALL.contains(&kind));
-            let t = Tokens::for_kind(kind);
-            assert_eq!(t.kind, kind);
-            assert_eq!(t.dark(), kind == ThemeKind::ArkuiDark);
-            assert!(!t.pro && !t.bevel && t.round_chips, "{kind:?} uses the Breeze/Studio layout");
-            assert_eq!(t.tab_strip, Color32::TRANSPARENT);
-            assert_eq!(t.row_selected, Color32::TRANSPARENT);
-            assert_eq!(t.accent, accent);
-            assert_eq!(t.chrome, chrome);
-            assert!(t.radius_sm > Tokens::for_kind(ThemeKind::Studio).radius_sm, "{kind:?}: rounder buttons and fields");
-            assert_ne!(t.canvas, t.chrome, "{kind:?}: canvas must separate from chrome");
-            assert_ne!(t.canvas_dot, t.canvas, "{kind:?}: Studio-style canvas dots");
-            assert!(contrast(t.text, t.card) >= 4.5, "{kind:?}: text on card");
-            assert!(contrast(t.text_dim, t.card) >= 3.0, "{kind:?}: dim text on card");
-            // ArkUI dark primary (#1F71FF) is a system brand blue; hold UI-component contrast (3:1).
-            assert!(contrast(t.primary_text, t.primary_bg) >= 3.0, "{kind:?}: primary label");
-            assert_eq!(kind.chrome_css(), if t.dark() { "#000000" } else { "#FFFFFF" });
-        }
-    }
-
-    #[test]
-    fn arkui_pro_themes_use_pro_layout_with_arkui_colours() {
-        for (kind, aliases, base) in [
-            (
-                ThemeKind::ArkuiProLight,
-                ["arkui pro light", "ArkUI Pro Light", "arkui_pro_light"],
-                ThemeKind::ArkuiLight,
-            ),
-            (
-                ThemeKind::ArkuiProDark,
-                ["arkui pro dark", "ArkUI Pro Dark", "arkui_pro_dark"],
-                ThemeKind::ArkuiDark,
-            ),
-        ] {
-            assert_eq!(ThemeKind::from_name(kind.id()), Some(kind));
-            assert_eq!(ThemeKind::from_name(kind.label()), Some(kind));
-            for alias in aliases {
-                assert_eq!(ThemeKind::from_name(alias), Some(kind), "{alias}");
-            }
-            assert!(ThemeKind::ALL.contains(&kind));
-            assert!(kind.is_pro(), "{kind:?}");
-            let t = Tokens::for_kind(kind);
-            let base = Tokens::for_kind(base);
-            assert_eq!(t.kind, kind);
-            assert_eq!(t.dark(), kind == ThemeKind::ArkuiProDark);
-            assert!(t.pro && !t.bevel && !t.round_chips, "{kind:?} uses the Pro layout");
-            assert_eq!(t.radius_sm, Tokens::for_kind(ThemeKind::Pro).radius_sm);
-            assert_eq!(t.radius, Tokens::for_kind(ThemeKind::Pro).radius);
-            assert_eq!(t.radius_lg, Tokens::for_kind(ThemeKind::Pro).radius_lg);
-            // Palette matches the tuned ArkUI themes.
-            assert_eq!(t.chrome, base.chrome);
-            assert_eq!(t.canvas, base.canvas);
-            assert_eq!(t.canvas_dot, base.canvas_dot);
-            assert_eq!(t.dock, base.dock);
-            assert_eq!(t.card, base.card);
-            assert_eq!(t.accent, base.accent);
-            assert_eq!(t.text, base.text);
-            assert_ne!(t.canvas, t.chrome, "{kind:?}: canvas must separate from chrome");
-            assert_ne!(t.canvas_dot, t.canvas, "{kind:?}: Studio-style canvas dots");
-            assert_ne!(t.tab_strip, Color32::TRANSPARENT, "{kind:?}: Pro tab strip");
-            assert_ne!(t.row_selected, Color32::TRANSPARENT, "{kind:?}: Pro row selection");
-            assert!(contrast(t.text, t.card) >= 4.5, "{kind:?}: text on card");
-            assert_eq!(kind.chrome_css(), if t.dark() { "#000000" } else { "#FFFFFF" });
-        }
-        // Plain ArkUI aliases must not steal the Pro variants.
-        assert_eq!(ThemeKind::from_name("arkui"), Some(ThemeKind::ArkuiLight));
-        assert_eq!(ThemeKind::from_name("arkui dark"), Some(ThemeKind::ArkuiDark));
-    }
-
-    #[test]
-    fn soft_themes_parse_and_hold_text_contrast() {
-        for (kind, alias) in [(ThemeKind::SoftDark, "soft dark"), (ThemeKind::SoftLight, "Soft_Light")] {
-            assert_eq!(ThemeKind::from_name(kind.id()), Some(kind));
-            assert_eq!(ThemeKind::from_name(kind.label()), Some(kind));
-            assert_eq!(ThemeKind::from_name(alias), Some(kind));
-            assert!(ThemeKind::ALL.contains(&kind));
-            let t = Tokens::for_kind(kind);
-            assert_eq!(t.kind, kind);
-            assert_eq!(t.dark(), kind == ThemeKind::SoftDark);
-            assert!(!t.pro && !t.bevel);
-            // Soft means no extremes: surfaces stay off black and white.
-            for c in [t.chrome, t.canvas, t.dock, t.card, t.field] {
-                let (hi, lo) = (c.r().max(c.g()).max(c.b()), c.r().min(c.g()).min(c.b()));
-                assert!(if t.dark() { (32..96).contains(&hi) } else { hi < 255 && lo > 200 }, "{kind:?}: {c:?}");
-            }
-            let tint = |under: Color32| {
-                let k = f32::from(t.accent_soft.a()) / 255.0;
-                let ch = |over: u8, under: u8| (f32::from(over) * k + f32::from(under) * (1.0 - k)).round() as u8;
-                Color32::from_rgb(ch(t.accent.r(), under.r()), ch(t.accent.g(), under.g()), ch(t.accent.b(), under.b()))
-            };
-            let surfaces = [t.chrome, t.canvas, t.dock, t.card, t.field, t.hover, t.pressed, tint(t.dock), tint(t.card)];
-            for (i, surface) in surfaces.into_iter().enumerate() {
-                for (name, colour) in [("text", t.text), ("dim", t.text_dim), ("faint", t.text_faint), ("accent text", t.accent_text)] {
-                    assert!(contrast(colour, surface) >= 4.5, "{kind:?}: {name} on {surface:?}");
-                }
-                // Status colours are marks on hovered or selected surfaces (3:1), text on resting ones.
-                let floor = if i < 5 { 4.5 } else { 3.0 };
-                assert!(contrast(t.danger, surface) >= floor && contrast(t.warning, surface) >= floor, "{kind:?}: status on {surface:?}");
-            }
-            for k in [1.0, 0.93, 0.85] {
-                assert!(contrast(t.primary_text, t.primary_bg.gamma_multiply(k)) >= 4.5, "{kind:?}: primary at {k}");
-            }
-        }
-    }
-
-    #[test]
-    fn breeze_themes_parse_and_meet_text_contrast() {
-        for (kind, aliases) in [
-            (ThemeKind::BreezeLight, ["breeze", "Breeze Light", "breeze_light", "kde", "plasma"]),
-            (ThemeKind::BreezeDark, ["breeze dark", "Breeze Dark", "breeze_dark", "kde dark", "plasma-dark"]),
-        ] {
-            assert_eq!(ThemeKind::from_name(kind.id()), Some(kind));
-            assert_eq!(ThemeKind::from_name(kind.label()), Some(kind));
-            for alias in aliases {
-                assert_eq!(ThemeKind::from_name(alias), Some(kind), "{alias}");
-            }
-            assert!(ThemeKind::ALL.contains(&kind));
-            let t = Tokens::for_kind(kind);
-            assert_eq!(t.kind, kind);
-            assert_eq!(t.dark(), kind == ThemeKind::BreezeDark);
-            assert!(!t.pro && !t.bevel, "{kind:?} uses the Studio layout");
-            // The design intent, not exact values (the palette is an adaptation and may be tuned):
-            // the canvas is the most recessed surface, then the dock and the cards, and controls
-            // sit above the cards they are on; the accent is a blue.
-            let lum = |c: Color32| u32::from(c.r()) + u32::from(c.g()) + u32::from(c.b());
-            assert!(lum(t.canvas) < lum(t.dock) && lum(t.dock) < lum(t.card) && lum(t.card) < lum(t.field), "{kind:?}: surface order");
-            assert!(t.accent.b() > t.accent.g() && t.accent.g() > t.accent.r(), "blue accent: {:?}", t.accent);
-            // Plasma's surfaces are cool blue-greys: dark ones stay below 64 per channel and light
-            // ones above 205, all with a little more blue than red (our own values, close to it).
-            for c in [t.chrome, t.canvas, t.dock, t.card, t.field] {
-                assert!(if t.dark() { c.r().max(c.g()).max(c.b()) < 64 } else { c.r().min(c.g()).min(c.b()) > 205 }, "{kind:?}: {c:?}");
-                assert!(c.b() > c.r(), "{kind:?}: blue-grey {c:?}");
-            }
-            // All text must read: AA (4.5:1) for every text colour on every surface it can sit on,
-            // including a hovered or pressed control and a selected (accent-tinted) row.
-            let tint = |under: Color32| {
-                let k = f32::from(t.accent_soft.a()) / 255.0;
-                let ch = |over: u8, under: u8| (f32::from(over) * k + f32::from(under) * (1.0 - k)).round() as u8;
-                Color32::from_rgb(ch(t.accent.r(), under.r()), ch(t.accent.g(), under.g()), ch(t.accent.b(), under.b()))
-            };
-            let resting = [t.chrome, t.canvas, t.dock, t.card, t.field];
-            let active = [t.hover, t.pressed, tint(t.chrome), tint(t.dock), tint(t.card), tint(t.field)];
-            for surface in resting.into_iter().chain(active) {
-                for (name, colour) in [("text", t.text), ("dim text", t.text_dim), ("faint text", t.text_faint), ("accent text", t.accent_text)] {
-                    assert!(contrast(colour, surface) >= 4.5, "{kind:?}: {name} on {surface:?}");
-                }
-            }
-            // The text must also keep a hierarchy, not collapse into one grey.
-            assert!(contrast(t.text, t.card) > contrast(t.text_dim, t.card) && contrast(t.text_dim, t.card) > contrast(t.text_faint, t.card), "{kind:?}");
-            // Danger and warning colours carry text on the resting surfaces; on hovered, pressed and
-            // selected ones they are status marks, held to the 3:1 of graphical objects.
-            for surface in resting {
-                assert!(contrast(t.danger, surface) >= 4.5, "{kind:?}: danger on {surface:?}");
-                assert!(contrast(t.warning, surface) >= 4.5, "{kind:?}: warning on {surface:?}");
-            }
-            for surface in active {
-                assert!(contrast(t.danger, surface) >= 3.0, "{kind:?}: danger on {surface:?}");
-                assert!(contrast(t.warning, surface) >= 3.0, "{kind:?}: warning on {surface:?}");
-            }
-            // A primary button darkens while hovered and pressed (button_impl), so check all three.
-            for k in [1.0, 0.93, 0.85] {
-                assert!(contrast(t.primary_text, t.primary_bg.gamma_multiply(k)) >= 4.5, "{kind:?}: primary button label at {k}");
-            }
-            assert!(contrast(t.caption_close_text, t.caption_close) >= 4.5, "{kind:?}: close button glyph");
-        }
-    }
-}
+mod tests;
 
 /// Development feature: live design-token overrides.
 ///
@@ -1760,7 +1160,7 @@ pub mod live {
                     super::apply(ctx, kind);
                     let mut t = Tokens::get(ctx);
                     let unknown = apply_overrides(&mut t, &v);
-                    ctx.data_mut(|d| d.insert_temp(egui::Id::new("photocraft-theme"), t));
+                    ctx.data_mut(|d| d.insert_temp(egui::Id::unique("photocraft-theme"), t));
                     if !unknown.is_empty() {
                         log::warn!("unknown token keys: {unknown:?}");
                     }
@@ -1789,51 +1189,195 @@ pub mod live {
         let mut unknown = Vec::new();
         let Some(obj) = v.as_object() else { return unknown };
         for (k, val) in obj {
-            macro_rules! c {
-                ($($f:ident),*) => {
-                    match k.as_str() {
-                        $(stringify!($f) => { if let Some(c) = color(val) { t.$f = c; } })*
-                        "radius_sm" => { if let Some(x) = val.as_f64() { t.radius_sm = x as f32; } }
-                        "radius" => { if let Some(x) = val.as_f64() { t.radius = x as f32; } }
-                        "radius_lg" => { if let Some(x) = val.as_f64() { t.radius_lg = x as f32; } }
-                        _ => unknown.push(k.clone()),
-                    }
-                };
+            if override_chrome_color(t, k, val) || override_text_color(t, k, val) || override_accent_color(t, k, val) {
+                continue;
             }
-            c!(
-                caption_close,
-                caption_close_text,
-                chrome,
-                canvas,
-                canvas_dot,
-                dock,
-                card,
-                card_border,
-                field,
-                field_border,
-                hover,
-                pressed,
-                text,
-                text_dim,
-                text_faint,
-                icon,
-                accent,
-                accent_soft,
-                accent_border,
-                accent_text,
-                separator,
-                shadow,
-                primary_bg,
-                primary_text,
-                danger,
-                warning,
-                online,
-                tab_strip,
-                row_selected,
-                scrim
-            );
+            match k.as_str() {
+                "radius_sm" => {
+                    if let Some(x) = val.as_f64() {
+                        t.radius_sm = x as f32;
+                    }
+                }
+                "radius" => {
+                    if let Some(x) = val.as_f64() {
+                        t.radius = x as f32;
+                    }
+                }
+                "radius_lg" => {
+                    if let Some(x) = val.as_f64() {
+                        t.radius_lg = x as f32;
+                    }
+                }
+                _ => unknown.push(k.clone()),
+            }
         }
         unknown
+    }
+
+    fn override_chrome_color(t: &mut Tokens, key: &str, value: &serde_json::Value) -> bool {
+        match key {
+            "caption_close" => {
+                if let Some(c) = color(value) {
+                    t.caption_close = c;
+                }
+            }
+            "caption_close_text" => {
+                if let Some(c) = color(value) {
+                    t.caption_close_text = c;
+                }
+            }
+            "chrome" => {
+                if let Some(c) = color(value) {
+                    t.chrome = c;
+                }
+            }
+            "canvas" => {
+                if let Some(c) = color(value) {
+                    t.canvas = c;
+                }
+            }
+            "canvas_dot" => {
+                if let Some(c) = color(value) {
+                    t.canvas_dot = c;
+                }
+            }
+            "dock" => {
+                if let Some(c) = color(value) {
+                    t.dock = c;
+                }
+            }
+            "card" => {
+                if let Some(c) = color(value) {
+                    t.card = c;
+                }
+            }
+            "card_border" => {
+                if let Some(c) = color(value) {
+                    t.card_border = c;
+                }
+            }
+            "field" => {
+                if let Some(c) = color(value) {
+                    t.field = c;
+                }
+            }
+            "field_border" => {
+                if let Some(c) = color(value) {
+                    t.field_border = c;
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn override_text_color(t: &mut Tokens, key: &str, value: &serde_json::Value) -> bool {
+        match key {
+            "hover" => {
+                if let Some(c) = color(value) {
+                    t.hover = c;
+                }
+            }
+            "pressed" => {
+                if let Some(c) = color(value) {
+                    t.pressed = c;
+                }
+            }
+            "text" => {
+                if let Some(c) = color(value) {
+                    t.text = c;
+                }
+            }
+            "text_dim" => {
+                if let Some(c) = color(value) {
+                    t.text_dim = c;
+                }
+            }
+            "text_faint" => {
+                if let Some(c) = color(value) {
+                    t.text_faint = c;
+                }
+            }
+            "icon" => {
+                if let Some(c) = color(value) {
+                    t.icon = c;
+                }
+            }
+            "separator" => {
+                if let Some(c) = color(value) {
+                    t.separator = c;
+                }
+            }
+            "shadow" => {
+                if let Some(c) = color(value) {
+                    t.shadow = c;
+                }
+            }
+            "primary_bg" => {
+                if let Some(c) = color(value) {
+                    t.primary_bg = c;
+                }
+            }
+            "primary_text" => {
+                if let Some(c) = color(value) {
+                    t.primary_text = c;
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    fn override_accent_color(t: &mut Tokens, key: &str, value: &serde_json::Value) -> bool {
+        match key {
+            "accent" => {
+                if let Some(c) = color(value) {
+                    t.accent = c;
+                }
+            }
+            "accent_soft" => {
+                if let Some(c) = color(value) {
+                    t.accent_soft = c;
+                }
+            }
+            "accent_border" => {
+                if let Some(c) = color(value) {
+                    t.accent_border = c;
+                }
+            }
+            "accent_text" => {
+                if let Some(c) = color(value) {
+                    t.accent_text = c;
+                }
+            }
+            "danger" => {
+                if let Some(c) = color(value) {
+                    t.danger = c;
+                }
+            }
+            "warning" => {
+                if let Some(c) = color(value) {
+                    t.warning = c;
+                }
+            }
+            "tab_strip" => {
+                if let Some(c) = color(value) {
+                    t.tab_strip = c;
+                }
+            }
+            "row_selected" => {
+                if let Some(c) = color(value) {
+                    t.row_selected = c;
+                }
+            }
+            "scrim" => {
+                if let Some(c) = color(value) {
+                    t.scrim = c;
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     #[cfg(test)]

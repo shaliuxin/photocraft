@@ -67,13 +67,16 @@ impl FileDialogReply {
     }
 }
 
-/// Show a file dialog and return at once, answering through the reply when the user is done.
-/// The window (`None` in tests) is the dialog's parent.
+/// The window a dialog is parented to. On the desktop that is eframe's; a host that owns its
+/// own window has no such handle, so the type is the unit and `None` reaches it the same way
+/// tests do — the dialog is then the shell's own (a system sheet on HarmonyOS).
 #[cfg(feature = "eframe-host")]
 pub type ParentFrame = eframe::Frame;
 #[cfg(not(feature = "eframe-host"))]
 pub type ParentFrame = ();
 
+/// Show a file dialog and return at once, answering through the reply when the user is done.
+/// The window (`None` in tests) is the dialog's parent.
 pub type FileDialogFn = Box<dyn FnMut(FileDialogRequest, Option<&ParentFrame>, FileDialogReply)>;
 
 /// What to do with the answer (`None`: cancelled).
@@ -95,14 +98,6 @@ pub(crate) struct Pending {
     held: Option<FileDialogAnswer>,
 }
 
-thread_local! {
-    /// The next folder request is for output (see [`PhotocraftApp::ask_output_folder`]).
-    static FOLDER_FOR_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    /// The next single-file open may be a photo (Place, Replace Contents): keep `pick_open`
-    /// (files-vs-gallery chooser on HarmonyOS) instead of `pick_import`.
-    static OPEN_ALLOWS_GALLERY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
 /// The error of a cancelled dialog: not reported, since backing out is the user's choice.
 pub(crate) const CANCELLED: &str = "cancelled";
 const UNEXPECTED: &str = "the file dialog gave an unexpected answer";
@@ -122,41 +117,8 @@ impl PhotocraftApp {
         then: impl FnOnce(&mut Self, FileDialogAnswer) -> Result<Value, String> + 'static,
     ) -> Result<Value, String> {
         if self.services.file_dialog.is_none() {
-            // Existing custom hosts select capability-bearing targets synchronously.
-            let answer = match &request {
-                FileDialogRequest::Save { suggested } => self.services.pick_save.as_mut().and_then(|pick| pick(suggested)).map(FileDialogAnswer::SaveTo),
-                FileDialogRequest::Open { multiple: true, .. } if self.services.pick_open_paths.is_some() => {
-                    self.services.pick_open_paths.as_mut().and_then(|pick| pick()).map(FileDialogAnswer::Paths)
-                }
-                // Single-file imports (notes, presets, scripts, path_pick staging, …) prefer
-                // `pick_import` so HarmonyOS can open the file manager without the document
-                // "从哪里导入" source chooser that File › Open uses.
-                FileDialogRequest::Open { multiple: false, .. }
-                    if self.services.pick_import.is_some() && !OPEN_ALLOWS_GALLERY.with(|g| g.replace(false)) =>
-                {
-                    match self.services.pick_import.as_mut().and_then(|pick| pick()) {
-                        Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
-                        None => None,
-                    }
-                }
-                FileDialogRequest::Open { .. } => match self.services.pick_open.as_mut().and_then(|pick| pick()) {
-                    Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
-                    None => None,
-                },
-                // Sync hosts answer folders through `pick_folder` (HarmonyOS); without one, cancel.
-                FileDialogRequest::Folder { .. } => {
-                    let output = FOLDER_FOR_OUTPUT.with(|o| o.replace(false));
-                    match self.services.pick_folder.as_mut().and_then(|pick| pick(output)) {
-                        Some(Ok(path)) => Some(FileDialogAnswer::FolderTo(path)),
-                        Some(Err(why)) => return Err(why),
-                        None => None,
-                    }
-                }
-            };
-            return then(self, answer.ok_or(CANCELLED)?);
+            return Err(CANCELLED.into());
         }
-        FOLDER_FOR_OUTPUT.with(|o| o.set(false));
-        OPEN_ALLOWS_GALLERY.with(|g| g.set(false));
         if self.file_dialog.is_some() {
             return Err("a file dialog is already open".into());
         }
@@ -182,16 +144,6 @@ impl PhotocraftApp {
             FileDialogAnswer::FolderTo(path) => then(app, path),
             _ => Err(UNEXPECTED.into()),
         })
-    }
-
-    /// [`Self::ask_folder`] for a folder the command writes into (an export or batch output).
-    /// Synchronous hosts' [`crate::Services::pick_folder`] is told so: a device without a folder
-    /// picker can offer its own writable folder for output, but not for input.
-    pub(crate) fn ask_output_folder(&mut self, then: impl FnOnce(&mut Self, String) -> Result<Value, String> + 'static) -> Result<Value, String> {
-        FOLDER_FOR_OUTPUT.with(|o| o.set(true));
-        let r = self.ask_folder(then);
-        FOLDER_FOR_OUTPUT.with(|o| o.set(false));
-        r
     }
 
     /// Ask where to save: `then` gets the chosen path, with a lowercase extension when
@@ -294,15 +246,6 @@ impl PhotocraftApp {
             let (name, bytes) = read_picked(answer)?;
             then(app, name, bytes)
         })
-    }
-
-    /// Like [`Self::pick_file_bytes`], for picks that may be photos (Place Embedded/Linked,
-    /// Replace Contents): uses `pick_open` so HarmonyOS still offers the gallery.
-    pub(crate) fn pick_image_bytes(&mut self, then: impl FnOnce(&mut Self, String, Vec<u8>) -> Result<Value, String> + 'static) -> Result<Value, String> {
-        OPEN_ALLOWS_GALLERY.with(|g| g.set(true));
-        let r = self.pick_file_bytes(then);
-        OPEN_ALLOWS_GALLERY.with(|g| g.set(false));
-        r
     }
 
     /// File › Open: opens every chosen file, reporting each failure (see [`Self::open_paths`]).

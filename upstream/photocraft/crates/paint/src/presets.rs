@@ -4,7 +4,10 @@
 //! Special Effects. Every preset is plain [`BrushSettings`] data, so it serialises, journals and
 //! can be edited like any user preset.
 
-use crate::brush::*;
+use crate::brush::{
+    BrushPreset, BrushSettings, ColorDynamics, Control, DualBrush, Dynamic, MaskMode, Pattern, PatternStyle, Scattering, ShapeDynamics, Smoothing, Texture,
+    TipShape, Transfer,
+};
 use crate::procedural::{bristle_tip, chalk_tip, charcoal_tip, grass_tip, leaf_tip, rake_tip, spatter_tip, sponge_tip, star_tip};
 
 /// Preset groups, in panel order.
@@ -36,19 +39,18 @@ fn paper(seed: u32, depth: f32) -> Texture {
 
 fn general(base: &BrushSettings) -> Vec<BrushPreset> {
     let g = |n: &str, b: BrushSettings| preset("General", n, b);
+    // Dense dabs keep large hard-round outlines and pressure-opacity tapers continuous (#8842).
+    let hard_round = BrushSettings { spacing: 0.05, ..base.clone() };
     vec![
-        g("Hard Round", BrushSettings { size: 30.0, hardness: 1.0, ..base.clone() }),
+        g("Hard Round", BrushSettings { size: 30.0, hardness: 1.0, ..hard_round.clone() }),
         g("Soft Round", BrushSettings { size: 45.0, hardness: 0.0, ..base.clone() }),
-        g("Hard Round Fine", BrushSettings { size: 5.0, hardness: 1.0, spacing: 0.1, ..base.clone() }),
+        g("Hard Round Fine", BrushSettings { size: 5.0, hardness: 1.0, ..hard_round.clone() }),
         g("Soft Round Large", BrushSettings { size: 300.0, hardness: 0.0, spacing: 0.15, ..base.clone() }),
-        g("Hard Round Pressure Size", BrushSettings { size: 30.0, hardness: 1.0, shape_dynamics: size_dyn(pressure()), ..base.clone() }),
+        g("Hard Round Pressure Size", BrushSettings { size: 30.0, hardness: 1.0, shape_dynamics: size_dyn(pressure()), ..hard_round.clone() }),
         g("Soft Round Pressure Size", BrushSettings { size: 45.0, hardness: 0.0, shape_dynamics: size_dyn(pressure()), ..base.clone() }),
-        g("Hard Round Pressure Opacity", BrushSettings { size: 30.0, hardness: 1.0, transfer: transfer(pressure(), Dynamic::default()), ..base.clone() }),
+        g("Hard Round Pressure Opacity", BrushSettings { size: 30.0, hardness: 1.0, transfer: transfer(pressure(), Dynamic::default()), ..hard_round.clone() }),
         g("Soft Round Pressure Opacity", BrushSettings { size: 45.0, hardness: 0.0, transfer: transfer(pressure(), Dynamic::default()), ..base.clone() }),
-        g(
-            "Hard Round Pressure Opacity and Flow",
-            BrushSettings { size: 30.0, hardness: 0.9, transfer: transfer(pressure(), pressure_min(0.2)), ..base.clone() },
-        ),
+        g("Hard Round Pressure Opacity and Flow", BrushSettings { size: 30.0, hardness: 0.9, transfer: transfer(pressure(), pressure_min(0.2)), ..hard_round }),
         g("Airbrush Soft", BrushSettings { size: 80.0, hardness: 0.0, flow: 0.1, spacing: 0.1, build_up: true, build_up_rate: 25.0, ..base.clone() }),
         g(
             "Airbrush Pressure Flow",
@@ -443,11 +445,6 @@ pub fn builtin() -> Vec<BrushPreset> {
     v.extend(dry_media(&base));
     v.extend(wet_media(&base));
     v.extend(special_effects(&base));
-    // Pressure Size / Opacity presets drive size/opacity through Shape Dynamics / Transfer. Light
-    // the options-bar buttons so turning them off can gate that path in `dynamics`.
-    for p in &mut v {
-        p.brush.sync_pressure_flags_from_dynamics();
-    }
     v
 }
 
@@ -475,12 +472,8 @@ mod tests {
         // Groups are contiguous, in panel order.
         let order: Vec<usize> = v.iter().filter_map(|p| GROUPS.iter().position(|g| *g == p.group)).collect();
         assert!(order.windows(2).all(|w| w[0] <= w[1]));
-        // Pressure variants respond to pressure, and light the options-bar buttons.
-        let ps = find(&v, "Hard Round Pressure Size").map(|p| &p.brush);
-        assert_eq!(ps.map(|b| b.shape_dynamics.size.control), Some(Control::PenPressure));
-        assert_eq!(ps.map(|b| b.pressure_size), Some(true));
-        let po = find(&v, "Hard Round Pressure Opacity").map(|p| &p.brush);
-        assert_eq!(po.map(|b| b.transfer.opacity.control), Some(Control::PenPressure));
-        assert_eq!(po.map(|b| b.pressure_opacity), Some(true));
+        // Pressure variants respond to pressure.
+        let ps = find(&v, "Hard Round Pressure Size").map(|p| p.brush.shape_dynamics.size.control);
+        assert_eq!(ps, Some(Control::PenPressure));
     }
 }

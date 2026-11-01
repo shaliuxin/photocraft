@@ -22,6 +22,21 @@ fn defaults_match_photoshop() {
     }
 }
 
+#[test]
+fn intermediate_ui_scale_presets_survive_restart() {
+    let mut s = Session::new();
+    assert_eq!(s.execute("prefs.get", json!({"path": "interface.uiScale"})).unwrap(), json!("auto"));
+    for scale in ["100", "105", "110", "115", "120", "125"] {
+        s.execute("prefs.set", json!({"path": "interface.uiScale", "value": scale})).unwrap();
+        let mut restored = Session::new();
+        restored.load_prefs_json(&s.prefs_to_json()).unwrap();
+        assert_eq!(restored.execute("prefs.get", json!({"path": "interface.uiScale"})).unwrap(), json!(scale));
+    }
+    // Presets remain discrete choices: arbitrary values must not silently replace a valid scale.
+    assert!(s.execute("prefs.set", json!({"path": "interface.uiScale", "value": "112"})).is_err());
+    assert_eq!(s.execute("prefs.get", json!({"path": "interface.uiScale"})).unwrap(), json!("125"));
+}
+
 /// #2264: the Studio workspace dot pattern can be hidden without changing themes.
 #[test]
 fn canvas_dot_grid_can_be_disabled_persisted_and_reset() {
@@ -550,47 +565,6 @@ fn gpu_backend_round_trips_and_validates() {
     }
 }
 
-#[test]
-fn stylus_tools_preferences_persist_validate_and_default_for_old_settings() {
-    let mut s = session();
-    s.execute(
-        "prefs.set",
-        json!({"values": {
-            "tools.blockFingerInput": true,
-            "tools.blockFingerInputConfigured": true,
-            "tools.stylusHoverPreview": true,
-            "tools.stylusDoubleTap": "previous",
-            "tools.stylusLongPress": "off"
-        }}),
-    )
-    .unwrap();
-    let mut restored = Session::new();
-    restored.load_prefs_json(&s.prefs_to_json()).unwrap();
-    assert!(restored.prefs().tools.block_finger_input);
-    assert!(restored.prefs().tools.block_finger_input_configured);
-    assert!(restored.prefs().tools.stylus_hover_preview);
-    assert_eq!(restored.prefs().tools.stylus_double_tap, StylusDoubleTap::Previous);
-    assert_eq!(restored.prefs().tools.stylus_long_press, StylusLongPress::Off);
-    let before = s.prefs().clone();
-    for path in ["tools.stylusDoubleTap", "tools.stylusLongPress"] {
-        for invalid in [json!("invalid"), json!(7), Value::Null] {
-            assert!(s.execute("prefs.set", json!({"values": {"tools.blockFingerInput": false, path: invalid}})).is_err());
-            assert_eq!(s.prefs(), &before, "invalid gesture choices must not partially change preferences");
-        }
-    }
-    restored.load_prefs_json(r#"{"tools":{"useTabletPressure":false}}"#).unwrap();
-    assert!(!restored.prefs().tools.block_finger_input);
-    assert!(!restored.prefs().tools.block_finger_input_configured);
-    assert!(!restored.prefs().tools.stylus_hover_preview);
-    assert_eq!(restored.prefs().tools.stylus_double_tap, StylusDoubleTap::Eraser);
-    assert_eq!(restored.prefs().tools.stylus_long_press, StylusLongPress::ContextMenu);
-    for blocked in [false, true] {
-        restored.load_prefs_json(&json!({"tools": {"blockFingerInput": blocked}}).to_string()).unwrap();
-        assert_eq!(restored.prefs().tools.block_finger_input, blocked);
-        assert!(restored.prefs().tools.block_finger_input_configured, "legacy saved choices survive the first connection");
-    }
-}
-
 /// #2022: notices auto-hide after a user-set delay by default; both settings round-trip.
 #[test]
 fn notification_autohide_preferences() {
@@ -622,22 +596,12 @@ fn notification_autohide_preferences() {
 }
 
 #[test]
-fn linux_only_preferences_show_only_on_desktop_linux() {
-    // OHOS triples still report target_os = "linux"; gate on target_env = "ohos".
-    assert_eq!(
-        is_desktop_linux(),
-        cfg!(all(target_os = "linux", not(target_env = "ohos")))
-    );
-    assert_eq!(is_hidden("performance.linuxDisplayServer"), !is_desktop_linux());
-    // Injected flag: HarmonyOS / non-desktop-Linux hosts keep the preference out of the dialog.
-    assert!(is_hidden_for("performance.linuxDisplayServer", false));
-    assert!(!is_hidden_for("performance.linuxDisplayServer", true));
+fn linux_only_preferences_show_only_on_linux() {
+    assert_eq!(is_hidden("performance.linuxDisplayServer"), !cfg!(target_os = "linux"));
     assert!(!is_hidden("performance.gpuBackend"));
-    assert!(!is_hidden_for("performance.gpuBackend", false));
     assert!(LINUX_ONLY.contains(&"performance.gpuAdapter"));
     let free_text = ["performance.gpuAdapter"];
     assert!(LINUX_ONLY.iter().all(|p| free_text.contains(p) || choices(p).is_some()), "every Linux-only preference is a real one");
-    assert_eq!("performance.linuxDisplayServer", LINUX_ONLY[0]);
 }
 
 #[test]
@@ -1068,4 +1032,36 @@ fn a_wrongly_typed_section_or_colour_setting_resets_only_that_part() {
     let deep = format!("{{\"general\": {}1{}}}", "{\"a\":".repeat(100), "}".repeat(100));
     assert!(s.load_prefs_json(&deep).is_ok());
     assert!(s.load_prefs_json(r#"{"interface": {"theme": 3, "uiScale": [1]}, "workspaces": {"x": 1}, "menus": 1}"#).is_ok());
+}
+
+/// A saved Memory Usage is kept as stored, and means the same on desktop; only the web build
+/// caps what it honours.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn the_history_budget_is_the_stored_memory_usage_on_native() {
+    for mb in [0u32, 1, 1536, 8192, 65536, u32::MAX] {
+        let p = Performance { memory_usage_mb: mb, ..Performance::default() };
+        assert_eq!(p.effective_memory_usage_mb(), mb);
+        assert_eq!(p.history_budget_bytes(), (mb as usize) << 20, "{mb} MB");
+    }
+    let mut s = Session::new();
+    s.load_prefs_json(r#"{"performance": {"memoryUsageMb": 8192}}"#).unwrap();
+    assert_eq!(s.prefs().performance.memory_usage_mb, 8192);
+    assert_eq!(s.prefs().performance.history_budget_bytes(), 8192 << 20);
+}
+
+/// The web build honours Memory Usage up to its cap: below and at it as stored, above it the cap.
+#[test]
+fn the_web_build_caps_memory_usage() {
+    for (stored, honoured) in [
+        (0, 0),
+        (1024, 1024),
+        (WASM_MEMORY_USAGE_CAP_MB, WASM_MEMORY_USAGE_CAP_MB),
+        (WASM_MEMORY_USAGE_CAP_MB + 1, WASM_MEMORY_USAGE_CAP_MB),
+        (8192, WASM_MEMORY_USAGE_CAP_MB),
+        (u32::MAX, WASM_MEMORY_USAGE_CAP_MB),
+    ] {
+        assert_eq!(honoured_memory_usage_mb(stored, true), honoured, "web, {stored} MB");
+        assert_eq!(honoured_memory_usage_mb(stored, false), stored, "desktop, {stored} MB");
+    }
 }

@@ -220,8 +220,8 @@ def cmd_pins(args: argparse.Namespace) -> int:
 
 def cmd_versions(args: argparse.Namespace) -> int:
     """versionName is <upstream major.minor.patch>.<hmos revision>; versionCode packs the same."""
-    upstream_version = json.loads(re.search(
-        r"^version = \"([^\"]+)\"", read(UPSTREAM / "Cargo.toml"), re.MULTILINE).group(0).split('"')[1])
+    # The capture, not the whole line: `version = "0.18.0"` is not JSON.
+    upstream_version = re.search(r'^version = "([^"]+)"', read(UPSTREAM / "Cargo.toml"), re.MULTILINE).group(1)
     current = app_version()
     upstream_parts = [int(p) for p in upstream_version.split(".")[:3]]
     current_parts = [int(p) for p in current.split(".")]

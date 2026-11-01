@@ -20,15 +20,14 @@ languages and the Windows user locale. `zh`, `zh-CN`, `zh-SG` and `zh-Hans`
 variants resolve to this catalog. Traditional Chinese locales (`zh-TW`, `zh-HK`,
 `zh-MO`, `zh-Hant`) resolve to the separate `zh-hant` catalog.
 
-The web build's **Auto** setting reads `?lang=` (`zh-Hans`, `zh-CN`, `zh`, and the
-Traditional tags above) and otherwise `navigator.languages`. Choose the language
-manually to override that for later launches.
+The web build does not detect the browser language automatically; choose the
+language manually there.
 
 ## Files and integration
 
 - `crates/ui-egui/src/i18n/zh-hans.tsv` contains the translations, independent of
   the lookup implementation. Its UTF-8 columns are `context<TAB>source<TAB>translation`.
-- `crates/ui-egui/src/i18n/mod.rs` registers `zh-hans` with one plural form and
+- `crates/ui-egui/src/i18n.rs` registers `zh-hans` with one plural form and
   `complete_menus: true`. `cargo xtask i18n-coverage` lists any menu string,
   `tl!` literal or other source key the catalog lacks; those show in English.
 - Shortcut templates retain `{key}` so the shell supplies the correct key for

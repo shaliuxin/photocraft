@@ -7,6 +7,7 @@
 
 /// Shell commands: id, label, menu path, default shortcut.
 pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
+    ("layer.selectUnderCursor", "Select Layer Under Cursor", &[], None),
     ("ui.symmetryTransform", "Transform Symmetry", &[], None),
     // Right-click the options bar's tool icon (#2825); `tool.resetAll` asks first.
     ("tool.reset", "Reset Tool", &[], None),
@@ -18,6 +19,12 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.panel.dock", "Dock Panel", &[], None),
     ("window.panel.activate", "Activate Panel", &[], None),
     ("window.panel.close", "Close Panel", &[], None),
+    ("window.panel.closeGroup", "Close Tab Group", &[], None),
+    ("window.panel.closeOthers", "Close Other Panels in Group", &[], None),
+    ("window.panel.minimize", "Minimize Panel", &[], None),
+    ("window.panel.iconic", "Collapse to Icons", &[], None),
+    ("window.panel.window", "Open Panel in Own Window", &[], None),
+    ("ui.dock", "Arrange Panels", &[], None),
     ("file.open", "Open…", &["File"], Some("Cmd+O")),
     ("file.save", "Save", &["File"], Some("Cmd+S")),
     ("file.saveAs", "Save As…", &["File"], Some("Cmd+Shift+S")),
@@ -74,8 +81,6 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.theme.adwaitaDark", "Adwaita", &["Window", "Theme", "Dark Theme"], None),
     ("window.theme.breezeDark", "Breeze", &["Window", "Theme", "Dark Theme"], None),
     ("window.theme.softDark", "Soft", &["Window", "Theme", "Dark Theme"], None),
-    ("window.theme.arkuiDark", "ArkUI", &["Window", "Theme", "Dark Theme"], None),
-    ("window.theme.arkuiProDark", "ArkUI Pro", &["Window", "Theme", "Dark Theme"], None),
     ("window.theme.proLightGray", "Pro Light Gray", &["Window", "Theme", "Light Theme"], None),
     ("window.theme.proLight", "Pro Light", &["Window", "Theme", "Light Theme"], None),
     ("window.theme.studioLight", "Studio", &["Window", "Theme", "Light Theme"], None),
@@ -83,8 +88,6 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("window.theme.adwaita", "Adwaita", &["Window", "Theme", "Light Theme"], None),
     ("window.theme.breezeLight", "Breeze", &["Window", "Theme", "Light Theme"], None),
     ("window.theme.softLight", "Soft", &["Window", "Theme", "Light Theme"], None),
-    ("window.theme.arkuiLight", "ArkUI", &["Window", "Theme", "Light Theme"], None),
-    ("window.theme.arkuiProLight", "ArkUI Pro", &["Window", "Theme", "Light Theme"], None),
     ("window.theme.system", "Sync with system", &["Window", "Theme"], None),
     ("edit.search", "Search…", &["Edit"], Some("Cmd+F")),
     ("help.discord", "Join the ArtCraft Discord…", &["Help"], None),
@@ -93,14 +96,6 @@ pub const SHELL_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("help.github", "PhotoCraft on GitHub", &["Help"], None),
     ("help.reportIssue", "Report an Issue…", &["Help"], None),
     ("help.systemInfo", "System Info…", &["Help"], None),
-    ("help.stylusDebug", "Stylus Debug…", &["Help"], None),
-    ("help.restore.brushes", "Brushes", &["Help", "Restore Defaults"], None),
-    ("help.restore.swatches", "Swatches", &["Help", "Restore Defaults"], None),
-    ("help.restore.patterns", "Patterns", &["Help", "Restore Defaults"], None),
-    ("help.restore.gradients", "Gradients", &["Help", "Restore Defaults"], None),
-    ("help.restore.styles", "Styles", &["Help", "Restore Defaults"], None),
-    ("help.restore.shapes", "Shapes", &["Help", "Restore Defaults"], None),
-    ("help.restore.toolPresets", "Tool Presets", &["Help", "Restore Defaults"], None),
     ("help.about", "About PhotoCraft", &["Help"], None),
 ];
 
@@ -150,6 +145,7 @@ pub const TOOLS: &[(&str, &str, Option<&str>)] = &[
     ("tools.select.cloneStamp", "Clone Stamp Tool", Some("S")),
     ("tools.select.patternStamp", "Pattern Stamp Tool", Some("S")),
     ("tools.select.historyBrush", "History Brush Tool", Some("Y")),
+    ("tools.select.artHistoryBrush", "Art History Brush Tool", Some("Y")),
     ("tools.select.blur", "Blur Tool", None),
     ("tools.select.sharpen", "Sharpen Tool", None),
     ("tools.select.smudge", "Smudge Tool", None),

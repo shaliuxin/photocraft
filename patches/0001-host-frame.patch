@@ -1,0 +1,636 @@
+From 4cb7eafdc1099778d575cff18966f1a10d5e27c4 Mon Sep 17 00:00:00 2001
+From: PhotoCraft HarmonyOS port <port@localhost>
+Date: Mon, 2 Nov 2026 01:01:51 +0800
+Subject: [PATCH 1/1] ui: let a shell without eframe drive the frame
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+eframe owns the window on the desktop: its event loop delivers the input, and each
+pass is handed an `eframe::Frame` for the window and its timings. A platform shell
+that owns the window itself (HarmonyOS' ArkUI/XComponent) has no such handle, and
+winit does not build there at all, so the crate could not be used off the desktop.
+
+The stages were already split for a wrapper (`logic_frame`, `ui_frame`, and the
+reset tails after them), so this adds the host-facing entry points over them:
+
+- `host_input`, `host_logic`, `host_ui`, `host_exit` — one frame, in the window's
+  order, and the close path `on_exit` already ran.
+- `eframe-host` feature: eframe is optional and `impl eframe::App` is compiled only
+  with it. The impl now delegates instead of holding the bodies.
+- `file_dialog::ParentFrame`: `eframe::Frame` with the feature, `()` without, so a
+  dialog request and `poll_file_dialog` take no window where there is none.
+- `self-update` feature, separate from the window: desktop and web check for a
+  release, a package the store updates does not.
+- egui-wgpu and wgpu are dependencies in their own right (the versions eframe 0.37
+  re-exports), since a host without eframe reaches the renderer directly.
+
+Checked: `cargo check -p photocraft-ui-egui --no-default-features` for
+aarch64-unknown-linux-ohos and x86_64-unknown-linux-ohos.
+---
+ Cargo.lock                                    |  2 +
+ crates/ui-egui/Cargo.toml                     | 19 ++++-
+ crates/ui-egui/src/app.rs                     | 52 +++---------
+ crates/ui-egui/src/app/frame.rs               | 23 ++++--
+ crates/ui-egui/src/app/gpu.rs                 |  4 +-
+ crates/ui-egui/src/app/host.rs                | 80 +++++++++++++++++++
+ .../ui-egui/src/canvas/background_redraw.rs   | 12 +--
+ crates/ui-egui/src/canvas/gpu_canvas.rs       |  4 +-
+ crates/ui-egui/src/dialogs/camera_raw_gpu.rs  |  2 +-
+ crates/ui-egui/src/file_dialog.rs             | 12 ++-
+ crates/ui-egui/src/lib.rs                     |  6 +-
+ crates/ui-egui/src/monitor_status.rs          | 15 ++--
+ crates/ui-egui/src/texel_guard.rs             |  2 +-
+ crates/ui-egui/src/updates_ui.rs              | 16 ++--
+ 14 files changed, 167 insertions(+), 82 deletions(-)
+ create mode 100644 crates/ui-egui/src/app/host.rs
+
+diff --git a/Cargo.lock b/Cargo.lock
+index a2a355c..8b6984d 100644
+--- a/Cargo.lock
++++ b/Cargo.lock
+@@ -5402,6 +5402,7 @@ dependencies = [
+  "craft-update",
+  "eframe",
+  "egui",
++ "egui-wgpu",
+  "egui_extras",
+  "egui_kittest",
+  "epaint_default_fonts",
+@@ -5434,6 +5435,7 @@ dependencies = [
+  "toml",
+  "unicode-bidi",
+  "web-time",
++ "wgpu",
+  "winsafe",
+ ]
+ 
+diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
+index c95da85..5f10af8 100644
+--- a/crates/ui-egui/Cargo.toml
++++ b/crates/ui-egui/Cargo.toml
+@@ -4,6 +4,16 @@ version.workspace = true
+ edition.workspace = true
+ license.workspace = true
+ 
++[features]
++default = ["eframe-host", "self-update"]
++# The desktop window: eframe owns the event loop, the surface and the frame each pass is handed.
++# A platform shell that owns its own window (HarmonyOS' ArkUI/XComponent, a scripted host) turns
++# this off and drives `PhotocraftApp::host_input` / `host_logic` / `host_ui` itself.
++eframe-host = ["dep:eframe"]
++# Check for and install a new release (desktop and web). A package that the store updates turns
++# this off: the app has nowhere to write a new build.
++self-update = ["dep:craft-update"]
++
+ [lints]
+ workspace = true
+ 
+@@ -31,7 +41,11 @@ photocraft-format = { workspace = true }
+ photocraft-codecs = { workspace = true }
+ egui = { workspace = true }
+ egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
+-eframe = { workspace = true, features = ["wgpu", "accesskit", "clipboard"] }
++eframe = { workspace = true, optional = true, features = ["wgpu", "accesskit", "clipboard"] }
++# The renderer and the GPU API, reached directly by a host that paints without eframe. Both are
++# the versions eframe 0.37 re-exports, so one copy of each is linked either way.
++egui-wgpu = { version = "0.37", default-features = false }
++wgpu = { version = "30", default-features = false, features = ["std", "wgsl"] }
+ serde = { workspace = true }
+ serde_json = { workspace = true }
+ log = { workspace = true }
+@@ -45,7 +59,8 @@ web-time = { workspace = true }
+ [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ # Floating panels open in their own OS windows on the desktop; the web keeps them in the page.
+ craft-ui = { workspace = true, features = ["native-windows"] }
+-craft-update = { workspace = true }
++# Self-update: desktop and AppImage installs only.
++craft-update = { workspace = true, optional = true }
+ rayon = { workspace = true }
+ # Safe native UI-language APIs (Windows/macOS); no subprocess or web dependency.
+ sys-locale = "=0.3.2"
+diff --git a/crates/ui-egui/src/app.rs b/crates/ui-egui/src/app.rs
+index 5672b91..887f77f 100644
+--- a/crates/ui-egui/src/app.rs
++++ b/crates/ui-egui/src/app.rs
+@@ -15,6 +15,7 @@ mod control;
+ mod files;
+ mod frame;
+ mod gpu;
++mod host;
+ mod ime;
+ mod input;
+ mod prefs;
+@@ -212,61 +213,26 @@ impl PhotocraftApp {
+     }
+ }
+ 
++/// The desktop window. Every body here is the host-facing method of the same name (`host.rs`),
++/// with the frame this toolkit hands over; a shell without eframe calls those methods directly
++/// and this impl is not compiled at all.
++#[cfg(feature = "eframe-host")]
+ impl eframe::App for PhotocraftApp {
+     fn on_exit(&mut self) {
+-        if let Err(err) = tool_memory::save_on_exit(self) {
+-            log::warn!("Preferences: could not save the final tool selection: {err}");
+-        }
+-        // Release a pending screenshot's image budget and answer its control request; the
+-        // callback is inert afterwards (it holds only a weak slot).
+-        let finished = self.captures.cancel_all("the application is closing");
+-        self.finish_captures(finished);
++        self.host_exit();
+     }
+ 
+     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+-        self.logic_frame(ctx, frame);
++        self.logic_frame(ctx, Some(frame));
+         self.finish_type_reset_logic(ctx);
+     }
+ 
+     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+-        let frame_start = gpu_canvas::now_ms();
+-        // An undecorated window gets its caption back when the toolkit changes its flags
+-        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
+-        if let Some(window_frame) = self.services.window_frame.as_mut() {
+-            window_frame();
+-        }
+-        // Native menu key equivalents become the key presses they were (see `native_menu`).
+-        if let Some(menu) = self.services.native_menu.as_mut() {
+-            menu.raw_input(raw_input);
+-        }
+-        // While a text field of a floating panel's own window has the keyboard, the dock area
+-        // hands that window the text keys in this input and converts them there.
+-        if craft_ui::docking::typing_window(ctx).is_none() {
+-            shortcuts::clipboard_keys(ctx, ctx.text_edit_focused() || self.ui.text_edit.is_some(), raw_input);
+-        }
+-        // Windows precision touchpads and some Linux Wayland compositors send pinches
+-        // as fractional Ctrl + wheel rather than a native Zoom event (#4566).
+-        // Leave Ctrl+whole-notch mouse scrolling alone, and honour the pinch preference.
+-        if cfg!(any(target_os = "windows", target_os = "linux")) && self.session.prefs().enhanced_controls.zoom_with_trackpad_pinch {
+-            wheel_nav::fold_legacy_pinch(ctx, raw_input);
+-        }
+-        self.inject_synthetic(ctx, raw_input);
+-        // After the control channel's own events (`ui.type`) join the OS's, before any widget.
+-        widgets::cap_text_events(&mut raw_input.events);
+-        self.control_click.normalize(&mut raw_input.events, cfg!(target_os = "macos"));
+-        // A pen held still is no touch screen's press-and-hold right click (stylus.rs).
+-        let pen_down = self.stylus.pen_contacts.observe(&raw_input.events);
+-        stylus::pen_hold_is_no_right_click(ctx, pen_down);
+-        if self.custom_titlebar {
+-            titlebar::release_after_os_resize(ctx, raw_input);
+-        }
+-        // The OS's moves and the control channel's (injected just above).
+-        let moves = raw_input.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).count();
+-        self.perf.stage.start(frame_start, moves);
++        self.host_input(ctx, raw_input);
+     }
+ 
+     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+-        self.ui_frame(ui, frame);
++        self.ui_frame(ui, Some(frame));
+         self.finish_type_reset_pass(ui.ctx());
+     }
+ }
+diff --git a/crates/ui-egui/src/app/frame.rs b/crates/ui-egui/src/app/frame.rs
+index 49b2267..f772b2b 100644
+--- a/crates/ui-egui/src/app/frame.rs
++++ b/crates/ui-egui/src/app/frame.rs
+@@ -21,8 +21,9 @@ impl PhotocraftApp {
+ }
+ 
+ impl PhotocraftApp {
+-    /// Shared logic body. A wrapping host owns the final reset tail after its own work.
+-    pub fn logic_frame(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
++    /// Shared logic body. A wrapping host owns the final reset tail after its own work, and
++    /// passes no frame (`None`) when it is the window itself.
++    pub fn logic_frame(&mut self, ctx: &egui::Context, parent: Option<&crate::file_dialog::ParentFrame>) {
+         self.cap_frame_rate();
+         i18n::set_current(i18n::Lang::from_pref(&self.session.prefs().interface.language));
+         // Caps Lock state read from the OS once per frame (see `Services::caps_lock`): the canvas
+@@ -66,7 +67,7 @@ impl PhotocraftApp {
+         shape_stroke_ui::sync_editor(self, ctx);
+         prefs_ui::tick(self, ctx);
+         updates_ui::tick(self, ctx);
+-        monitor_status::poll_frame(self, ctx, frame);
++        monitor_status::poll_frame(self, ctx, parent);
+         // Control requests and persisted preferences can change the language in this frame.
+         i18n::sync_context(ctx, &self.session.prefs().interface.language);
+         type_tool::sync_font_names(ctx, self.session.prefs().type_.show_font_names_in_english);
+@@ -127,12 +128,12 @@ impl PhotocraftApp {
+         if self.captures.any_unissued() || self.synthetic_batch.is_some() || !self.synthetic.is_empty() {
+             ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
+         }
+-        self.poll_file_dialog(ctx, Some(frame));
++        self.poll_file_dialog(ctx, parent);
+     }
+ 
+     /// Shared UI body. A wrapping host must call `finish_type_reset_pass` after return,
+     /// including when this body returns early without drawing an editor.
+-    pub fn ui_frame(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
++    pub fn ui_frame(&mut self, ui: &mut egui::Ui, parent: Option<&crate::file_dialog::ParentFrame>) {
+         let ctx = ui.ctx().clone();
+         // One control owner even when this callback cannot draw the custom editor.
+         if !self.fonts_ready
+@@ -171,7 +172,15 @@ impl PhotocraftApp {
+             return;
+         }
+         let t0 = gpu_canvas::now_ms();
+-        self.perf.stage.ui_start(t0, frame.info().cpu_usage);
++        // eframe measures the frame it hosted; a shell without it has no reading to offer.
++        #[cfg(feature = "eframe-host")]
++        let cpu_prev = parent.and_then(|frame| frame.info().cpu_usage);
++        #[cfg(not(feature = "eframe-host"))]
++        let cpu_prev = {
++            let _ = parent;
++            None
++        };
++        self.perf.stage.ui_start(t0, cpu_prev);
+         // A software adapter or CPU mode chosen at startup is every document's reason.
+         crate::render_path::frame(self);
+         // Every frame that started its stage record closes it, whichever way `ui_body` returns.
+@@ -212,7 +221,7 @@ impl PhotocraftApp {
+         // polling it even when the platform would otherwise put the event loop to sleep.
+         jobs_ui::keep_polling(self, &ctx);
+         // Menus and buttons in this frame may have asked for a file dialog.
+-        self.poll_file_dialog(&ctx, Some(frame));
++        self.poll_file_dialog(&ctx, parent);
+         // The Type tool's IME descriptor is the last writer of this pass: every panel and the
+         // canvas have finished mutating the model, and an absent/focus-moved editor ends here.
+         type_tool::sync_ime(self, &ctx);
+diff --git a/crates/ui-egui/src/app/gpu.rs b/crates/ui-egui/src/app/gpu.rs
+index 055a85e..4b78988 100644
+--- a/crates/ui-egui/src/app/gpu.rs
++++ b/crates/ui-egui/src/app/gpu.rs
+@@ -3,7 +3,7 @@ use super::{PhotocraftApp, gpu_canvas, gpu_status};
+ impl PhotocraftApp {
+     /// Draw the document canvas on the GPU (custom WGSL shader) instead of via egui textures.
+     /// Call from the app creator with `cc.wgpu_render_state`; without it the CPU path is used.
+-    pub fn set_wgpu(&mut self, rs: eframe::egui_wgpu::RenderState) {
++    pub fn set_wgpu(&mut self, rs: egui_wgpu::RenderState) {
+         // Preferences › Performance › cache tile size (PHOTOCRAFT_GPU_TILE still overrides).
+         let tile = self.session.prefs().performance.cache_tile_size;
+         // Escaped driver/setup panics must leave the session and CPU canvas alive.
+@@ -46,7 +46,7 @@ impl PhotocraftApp {
+ 
+     /// Watch the device the window draws with when the GPU canvas doesn't (the CPU canvas), so
+     /// its loss is handled like the GPU canvas's (see `gpu_status::check_window`).
+-    pub fn watch_window_device(&mut self, device: &eframe::wgpu::Device) {
++    pub fn watch_window_device(&mut self, device: &wgpu::Device) {
+         self.window_device = Some((device.clone(), photocraft_gpu::DeviceHealth::watch(device)));
+     }
+ 
+diff --git a/crates/ui-egui/src/app/host.rs b/crates/ui-egui/src/app/host.rs
+new file mode 100644
+index 0000000..776b977
+--- /dev/null
++++ b/crates/ui-egui/src/app/host.rs
+@@ -0,0 +1,80 @@
++//! The frame a host that is not eframe drives.
++//!
++//! On the desktop eframe owns the window: its event loop delivers the input, and each pass is
++//! handed an `eframe::Frame` carrying the window and its timings. A platform shell that owns the
++//! window itself — HarmonyOS' ArkUI/XComponent, a scripted host — drives the same three stages
++//! directly and passes no frame at all: [`file_dialog::ParentFrame`] is `()` there.
++//!
++//! One frame, in the window's order: [`PhotocraftApp::host_input`], then
++//! [`PhotocraftApp::host_logic`], then [`PhotocraftApp::host_ui`]. Keep `host_ui` last, and call
++//! it exactly once per frame that ran `host_input`: it closes the frame's stage record.
++
++use super::{PhotocraftApp, gpu_canvas, shortcuts, stylus, titlebar, widgets, wheel_nav};
++
++impl PhotocraftApp {
++    /// Input: the events the host collected since the previous frame, adjusted in place.
++    ///
++    /// Everything here rewrites the events the widgets will see, so it must run before any
++    /// widget: the host's own title-bar handling, then the shortcuts that turn clipboard keys
++    /// into text, then the events the control channel injected.
++    pub fn host_input(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
++        let frame_start = gpu_canvas::now_ms();
++        // An undecorated window gets its caption back when the toolkit changes its flags
++        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
++        if let Some(window_frame) = self.services.window_frame.as_mut() {
++            window_frame();
++        }
++        // Native menu key equivalents become the key presses they were (see `native_menu`).
++        if let Some(menu) = self.services.native_menu.as_mut() {
++            menu.raw_input(raw_input);
++        }
++        // While a text field of a floating panel's own window has the keyboard, the dock area
++        // hands that window the text keys in this input and converts them there.
++        if craft_ui::docking::typing_window(ctx).is_none() {
++            shortcuts::clipboard_keys(ctx, ctx.text_edit_focused() || self.ui.text_edit.is_some(), raw_input);
++        }
++        // Windows precision touchpads and some Linux Wayland compositors send pinches
++        // as fractional Ctrl + wheel rather than a native Zoom event (#4566).
++        // Leave Ctrl+whole-notch mouse scrolling alone, and honour the pinch preference.
++        if cfg!(any(target_os = "windows", target_os = "linux")) && self.session.prefs().enhanced_controls.zoom_with_trackpad_pinch {
++            wheel_nav::fold_legacy_pinch(ctx, raw_input);
++        }
++        self.inject_synthetic(ctx, raw_input);
++        // After the control channel's own events (`ui.type`) join the OS's, before any widget.
++        widgets::cap_text_events(&mut raw_input.events);
++        self.control_click.normalize(&mut raw_input.events, cfg!(target_os = "macos"));
++        // A pen held still is no touch screen's press-and-hold right click (stylus.rs).
++        let pen_down = self.stylus.pen_contacts.observe(&raw_input.events);
++        stylus::pen_hold_is_no_right_click(ctx, pen_down);
++        if self.custom_titlebar {
++            titlebar::release_after_os_resize(ctx, raw_input);
++        }
++        // The OS's moves and the control channel's (injected just above).
++        let moves = raw_input.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).count();
++        self.perf.stage.start(frame_start, moves);
++    }
++
++    /// Logic: the frame's work before anything is drawn (commands, jobs, documents, prefs).
++    pub fn host_logic(&mut self, ctx: &egui::Context) {
++        self.logic_frame(ctx, None);
++        self.finish_type_reset_logic(ctx);
++    }
++
++    /// The UI pass: draw the editor into a full-window `Ui` and close the frame's stage record.
++    pub fn host_ui(&mut self, ui: &mut egui::Ui) {
++        self.ui_frame(ui, None);
++        self.finish_type_reset_pass(ui.ctx());
++    }
++
++    /// Closing the window: keep what the app remembers across runs and answer pending captures.
++    /// A host calls this once, after its last frame; the desktop reaches it through `on_exit`.
++    pub fn host_exit(&mut self) {
++        if let Err(err) = super::tool_memory::save_on_exit(self) {
++            log::warn!("Preferences: could not save the final tool selection: {err}");
++        }
++        // Release a pending screenshot's image budget and answer its control request; the
++        // callback is inert afterwards (it holds only a weak slot).
++        let finished = self.captures.cancel_all("the application is closing");
++        self.finish_captures(finished);
++    }
++}
+diff --git a/crates/ui-egui/src/canvas/background_redraw.rs b/crates/ui-egui/src/canvas/background_redraw.rs
+index 003d250..ee7d088 100644
+--- a/crates/ui-egui/src/canvas/background_redraw.rs
++++ b/crates/ui-egui/src/canvas/background_redraw.rs
+@@ -115,7 +115,7 @@ pub(crate) struct Redraw {
+     doc: Arc<Document>,
+     display: u64,
+     text_gamma: u32,
+-    format: eframe::wgpu::TextureFormat,
++    format: wgpu::TextureFormat,
+     /// Uploaded blocks of `doc` kept for [`Kept`] (empty once over `cap`), and their bytes.
+     collected: Vec<Option<Vec<u8>>>,
+     collected_bytes: u64,
+@@ -159,7 +159,7 @@ pub(crate) struct Kept {
+     id: DocId,
+     display: u64,
+     text_gamma: u32,
+-    format: eframe::wgpu::TextureFormat,
++    format: wgpu::TextureFormat,
+     blocks: Vec<Rect>,
+     texels: Vec<Vec<u8>>,
+     bytes: u64,
+@@ -171,7 +171,7 @@ impl Kept {
+     /// else it holds), so a stale composite can't come back; Arc-shared tiles compare without
+     /// reading their pixels. Besides the document, the display transform and the text gamma
+     /// ([`text_gamma`]) decide the texels.
+-    fn matches(&self, doc: &Arc<Document>, display: u64, text_gamma: u32, format: eframe::wgpu::TextureFormat, blocks: &[Rect]) -> bool {
++    fn matches(&self, doc: &Arc<Document>, display: u64, text_gamma: u32, format: wgpu::TextureFormat, blocks: &[Rect]) -> bool {
+         self.display == display
+             && self.text_gamma == text_gamma
+             && self.format == format
+@@ -190,7 +190,7 @@ pub(crate) struct KeptComposites {
+ 
+ impl KeptComposites {
+     /// The kept redraw of exactly this state, now the newest.
+-    fn find(&mut self, doc: &Arc<Document>, display: u64, text_gamma: u32, format: eframe::wgpu::TextureFormat, blocks: &[Rect]) -> Option<&Kept> {
++    fn find(&mut self, doc: &Arc<Document>, display: u64, text_gamma: u32, format: wgpu::TextureFormat, blocks: &[Rect]) -> Option<&Kept> {
+         let i = self.entries.iter().position(|k| k.matches(doc, display, text_gamma, format, blocks))?;
+         let k = self.entries.remove(i)?;
+         self.entries.push_front(k);
+@@ -448,7 +448,7 @@ struct Spawn {
+     display: Option<Arc<CanvasDisplay>>,
+     display_key: u64,
+     text_gamma: u32,
+-    format: eframe::wgpu::TextureFormat,
++    format: wgpu::TextureFormat,
+     visible: Rect,
+     blocks: Vec<Rect>,
+     pending: Vec<bool>,
+@@ -533,7 +533,7 @@ fn spawn(app: &mut PhotocraftApp, ctx: &egui::Context, s: Spawn) {
+ fn draw(
+     doc: &Document,
+     display: Option<&CanvasDisplay>,
+-    format: eframe::wgpu::TextureFormat,
++    format: wgpu::TextureFormat,
+     blocks: &[Rect],
+     todo: &[usize],
+     stop: &AtomicBool,
+diff --git a/crates/ui-egui/src/canvas/gpu_canvas.rs b/crates/ui-egui/src/canvas/gpu_canvas.rs
+index 48aeb07..9c29f1b 100644
+--- a/crates/ui-egui/src/canvas/gpu_canvas.rs
++++ b/crates/ui-egui/src/canvas/gpu_canvas.rs
+@@ -29,8 +29,8 @@ use std::collections::HashMap;
+ use std::num::NonZeroU64;
+ use std::sync::atomic::Ordering;
+ 
+-use eframe::egui_wgpu::{self, CallbackResources, CallbackTrait, RenderState, ScreenDescriptor};
+-use eframe::wgpu;
++use egui_wgpu::{self, CallbackResources, CallbackTrait, RenderState, ScreenDescriptor};
++use wgpu;
+ 
+ use crate::render_path::CpuReason;
+ 
+diff --git a/crates/ui-egui/src/dialogs/camera_raw_gpu.rs b/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
+index 5e9f871..9e1968e 100644
+--- a/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
++++ b/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
+@@ -10,7 +10,7 @@
+ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+ use std::sync::{Arc, Mutex, OnceLock};
+ 
+-use eframe::wgpu;
++use wgpu;
+ use photocraft_algo::camera_raw::CameraRaw;
+ use photocraft_gpu::{CameraRawDevelop, DeviceHealth};
+ 
+diff --git a/crates/ui-egui/src/file_dialog.rs b/crates/ui-egui/src/file_dialog.rs
+index bddc679..b90a6bf 100644
+--- a/crates/ui-egui/src/file_dialog.rs
++++ b/crates/ui-egui/src/file_dialog.rs
+@@ -67,9 +67,17 @@ impl FileDialogReply {
+     }
+ }
+ 
++/// The window a dialog is parented to. On the desktop that is eframe's; a host that owns its
++/// own window has no such handle, so the type is the unit and `None` reaches it the same way
++/// tests do — the dialog is then the shell's own (a system sheet on HarmonyOS).
++#[cfg(feature = "eframe-host")]
++pub type ParentFrame = eframe::Frame;
++#[cfg(not(feature = "eframe-host"))]
++pub type ParentFrame = ();
++
+ /// Show a file dialog and return at once, answering through the reply when the user is done.
+ /// The window (`None` in tests) is the dialog's parent.
+-pub type FileDialogFn = Box<dyn FnMut(FileDialogRequest, Option<&eframe::Frame>, FileDialogReply)>;
++pub type FileDialogFn = Box<dyn FnMut(FileDialogRequest, Option<&ParentFrame>, FileDialogReply)>;
+ 
+ /// What to do with the answer (`None`: cancelled).
+ type Then = Box<dyn FnOnce(&mut PhotocraftApp, Option<FileDialogAnswer>) -> Result<Value, String>>;
+@@ -307,7 +315,7 @@ impl PhotocraftApp {
+ 
+     /// Called every frame: shows a queued dialog with `parent` (the window) as its parent, and
+     /// continues the action that asked once the answer is in. Its errors go to the status bar.
+-    pub fn poll_file_dialog(&mut self, ctx: &egui::Context, parent: Option<&eframe::Frame>) {
++    pub fn poll_file_dialog(&mut self, ctx: &egui::Context, parent: Option<&ParentFrame>) {
+         let Some(p) = self.file_dialog.as_mut() else { return };
+         if p.held.is_some() {
+             // The question whether to replace answers through `answer_replace`. Closed without an
+diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+index e272ddb..946bf4a 100644
+--- a/crates/ui-egui/src/lib.rs
++++ b/crates/ui-egui/src/lib.rs
+@@ -9,7 +9,7 @@
+ 
+ /// PhotoCraft as craft-update knows it, with its 128 px icon and accent colour: the update
+ /// prompt shows both, and an AppImage's menu entry gets the icon.
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
+     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.photocraft.png")),
+     accent: Some([0x2f, 0x7b, 0xf5]),
+@@ -622,7 +622,7 @@ pub struct PhotocraftApp {
+     gpu: Option<gpu_canvas::GpuCanvas>,
+     /// The device the window itself draws with, and its health flag: the GPU canvas's, or one
+     /// watched for the CPU canvas (see `gpu_status::check_window`).
+-    window_device: Option<(eframe::wgpu::Device, photocraft_gpu::DeviceHealth)>,
++    window_device: Option<(wgpu::Device, photocraft_gpu::DeviceHealth)>,
+     /// That device was lost: frames draw nothing and the app closes once its work is saved (#3438).
+     window_lost: bool,
+     /// When (in `egui::InputState::time`) to try saving unsaved work for recovery again after a
+@@ -630,7 +630,7 @@ pub struct PhotocraftApp {
+     window_recovery_retry: Option<f64>,
+     /// The render state the GPU canvas was built on, kept after it is dropped so Retry GPU can
+     /// build a new one on the same device (see `gpu_status::choose_recovery`, #6577).
+-    gpu_render_state: Option<eframe::egui_wgpu::RenderState>,
++    gpu_render_state: Option<egui_wgpu::RenderState>,
+     /// Why the GPU canvas was dropped (see `gpu_status::fall_back`).
+     gpu_fault: Option<photocraft_gpu::Fault>,
+     /// Out-of-memory errors this session after which the GPU canvas was rebuilt by itself (#6564).
+diff --git a/crates/ui-egui/src/monitor_status.rs b/crates/ui-egui/src/monitor_status.rs
+index 2350e6d..9021cd5 100644
+--- a/crates/ui-egui/src/monitor_status.rs
++++ b/crates/ui-egui/src/monitor_status.rs
+@@ -69,14 +69,19 @@ pub fn poll(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     poll_with_output_name(app, ctx, None);
+ }
+ 
+-#[cfg(target_os = "linux")]
+-pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, frame: &eframe::Frame) {
+-    let output_name = frame.winit_window().and_then(|window| window.current_monitor()).and_then(|monitor| monitor.name());
++// The output name identifies the monitor on X11 and Wayland, which is what a reading is keyed
++// by; that name comes from the toolkit window, so only eframe on Linux has one to offer.
++#[cfg(all(target_os = "linux", feature = "eframe-host"))]
++pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, parent: Option<&crate::file_dialog::ParentFrame>) {
++    let output_name = parent
++        .and_then(|frame| frame.winit_window())
++        .and_then(|window| window.current_monitor())
++        .and_then(|monitor| monitor.name());
+     poll_with_output_name(app, ctx, output_name);
+ }
+ 
+-#[cfg(not(target_os = "linux"))]
+-pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, _frame: &eframe::Frame) {
++#[cfg(not(all(target_os = "linux", feature = "eframe-host")))]
++pub fn poll_frame(app: &mut PhotocraftApp, ctx: &egui::Context, _parent: Option<&crate::file_dialog::ParentFrame>) {
+     poll(app, ctx);
+ }
+ 
+diff --git a/crates/ui-egui/src/texel_guard.rs b/crates/ui-egui/src/texel_guard.rs
+index 28bca7c..07c4cb1 100644
+--- a/crates/ui-egui/src/texel_guard.rs
++++ b/crates/ui-egui/src/texel_guard.rs
+@@ -19,7 +19,7 @@
+ 
+ use std::sync::Arc;
+ 
+-use eframe::wgpu;
++use wgpu;
+ use egui::{Color32, FullOutput, ImageData, TexturesDelta};
+ 
+ /// What a fully transparent texel is uploaded as.
+diff --git a/crates/ui-egui/src/updates_ui.rs b/crates/ui-egui/src/updates_ui.rs
+index 2c5a1be..99f5d34 100644
+--- a/crates/ui-egui/src/updates_ui.rs
++++ b/crates/ui-egui/src/updates_ui.rs
+@@ -9,7 +9,7 @@ pub(crate) struct Runtime {
+     startup_checked: bool,
+     notified_version: Option<String>,
+     /// The startup prompt and the self-update behind it (desktop).
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+     updater: craft_update::updater::Updater,
+ }
+ 
+@@ -18,14 +18,14 @@ impl Default for Runtime {
+         Self {
+             startup_checked: false,
+             notified_version: None,
+-            #[cfg(not(target_arch = "wasm32"))]
++            #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+             updater: craft_update::updater::Updater::new(&crate::UPDATE_APP, photocraft_engine::build_info::VERSION),
+         }
+     }
+ }
+ 
+ /// The release the engine found, as `craft-update` knows it.
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ fn release_of(found: &photocraft_engine::updates_cmds::Release) -> craft_update::Release {
+     craft_update::Release {
+         tag: format!("v{}", found.version),
+@@ -61,7 +61,7 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     {
+         app.updates_rt.notified_version = Some(release.version.clone());
+         app.ui.updates_open = true;
+-        #[cfg(not(target_arch = "wasm32"))]
++        #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+         app.updates_rt.updater.offer(release_of(release));
+     }
+     if app.session.updates.check.is_none() {
+@@ -81,7 +81,7 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
+ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     let mut download: Option<String> = None;
+ 
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+     {
+         let was_open = app.updates_rt.updater.prompt_open();
+         app.updates_rt.updater.tick(ctx);
+@@ -130,7 +130,7 @@ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+                 }
+                 Status::Available { release } => {
+                     ui.label(crate::i18n::fmt(crate::i18n::t("PhotoCraft {version} is available."), &[("version", &release.version)]));
+-                    #[cfg(not(target_arch = "wasm32"))]
++                    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+                     {
+                         if crate::widgets::primary_button(ui, tl!("Update and Restart"), 180.0).clicked() {
+                             app.updates_rt.updater.offer(release_of(release));
+@@ -139,7 +139,7 @@ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+                             download = Some(release.url.clone());
+                         }
+                     }
+-                    #[cfg(target_arch = "wasm32")]
++                    #[cfg(any(target_arch = "wasm32", not(feature = "self-update")))]
+                     if crate::widgets::primary_button(ui, tl!("Open Download Page"), 160.0).clicked() {
+                         download = Some(release.url.clone());
+                     }
+@@ -282,7 +282,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+     fn startup_update_prompt_appears_and_can_be_dismissed() {
+         let (mut app, _, sender) = app();
+         let ctx = egui::Context::default();
+-- 
+2.55.0.windows.3
+
