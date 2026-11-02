@@ -84,7 +84,7 @@ PhotoCraft 是一款开源图像编辑器，支持图层、蒙版、文字、画
 
 ### 从本仓库源码构建（已有开发者套件）
 
-需本机已准备好 **HarmonyOS 6.0 / API 20** 相关 SDK（如 DevEco Studio），以及可编译鸿蒙目标的 Rust 工具链。本地调试签名请在 DevEco Studio 中配置；签名材料仅保留于本机，请勿提交至仓库。
+需本机已准备好 **HarmonyOS SDK**（如 DevEco Studio 自带，API 20 或更高）与可编译鸿蒙目标的 Rust 工具链。本地调试签名请在 DevEco Studio 中配置；签名材料仅保留于本机，请勿提交至仓库。
 
 1. 克隆本仓库，进入项目目录
 2. 添加鸿蒙相关 Rust 目标：
@@ -93,14 +93,24 @@ PhotoCraft 是一款开源图像编辑器，支持图层、蒙版、文字、画
 rustup target add aarch64-unknown-linux-ohos
 ```
 
-3. 将 `scripts/dev.local.env.example` 复制为 `scripts/dev.local.env`，按本机路径填写 SDK、`hdc`、`hvigorw`、`ohpm` 等（该文件已被 git 忽略）
+3. 生成被 git 忽略的本地配置：
+
+```sh
+cp build-profile.example.json5 build-profile.json5   # 应用/模块与 SDK 版本
+cp scripts/dev.local.env.example scripts/dev.local.env  # SDK、hdc、hvigorw、ohpm 路径
+```
+
+   `build-profile.json5` 里的 `compatibleSdkVersion`/`targetSdkVersion` 格式随 SDK 版本变：**API 25 及以前写 `"6.0.0(20)"` 这类三段式加括号版本，API 26 及以后写纯 `"26.0.0"`**（写错会直接报 `api version parameter is illegal` 或 `Specification Limit Violation`）。示例文件按 API 20 写，用更新 SDK 时请同步改。
+
 4. 构建与安装（请仅连接一台模拟器或真机）：
 
 ```sh
-scripts/dev.sh build    # 编译 ARM64 原生库，并打出本地调试用 HAP
+scripts/dev.sh build    # 编译 ARM64 + x86_64 原生库，并打出 HAP
 scripts/dev.sh run      # 构建后经 hdc 安装到当前唯一连接的设备并启动
 scripts/dev.sh launch   # 重新启动已经装好的应用
 ```
+
+默认同时构建 `arm64-v8a` 与 `x86_64`，一个 HAP 覆盖真机和模拟器；只想要快一点的本地循环时用 `PHOTOCRAFT_ABIS=arm64-v8a`。打包需要 `java` 在 PATH 上（`scripts/dev.sh` 会把 `$JAVA_HOME/bin` 前置），仅设置 `JAVA_HOME` 时 `PackageHap` 会以 `spawn java ENOENT` 失败。
 
 `scripts/dev.sh run` 会调用 `hdc install -r` 安装本地调试签名后的 HAP（`entry/build/default/outputs/default/entry-default-signed.hap`），再通过 `hdc shell aa start` 启动应用。若已手动构建好签名包，也可自行执行：
 
