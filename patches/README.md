@@ -5,8 +5,13 @@
 | 文件 | 内容 | 规模 |
 |---|---|---|
 | `0001-host-frame.patch` | 宿主扩展点：`eframe` 可选、`host_input`/`host_logic`/`host_ui`/`host_exit`、`file_dialog::ParentFrame`、`self-update` 特性、直接依赖 `egui-wgpu`/`wgpu` | 167 增 / 82 删 / 14 文件 |
+| `0002-engine-hooks.patch` | 引擎钩子：`installed_profiles::set_app_profile_dir`、`format::atomic::set_host_writer`、`text::cjk::set_ui_locale`、`i18n::set_host_locale`、ArkUI 主题枚举、手写笔偏好、`prefs/validate.rs` 的 OHOS 门控 | 350 增 / 24 删 / 7 文件 |
+| `0003-host-fonts.patch` | 宿主字体：`text/cjk_fonts.rs` 的 `font_bytes_ok`、`store_host_cjk_font`、`reapply_host_fonts` | 77 增 / 1 文件 |
+| `0004-chrome-sandbox-seams.patch` | 沙箱与外观：`Services` 的 `pick_open`/`pick_import`/`pick_save`/`pick_folder`/`sandbox_dir`/`documents_dir`/`path_pickers_only`/`always_pick_save`/`default_save`、`ask_file` 同步直答、`window_fullscreen`、`host_titlebar`、`native_doc_windows`、`ThemeKind::chrome_css` | 547 增 / 2 删 / 10 文件 |
 
-后续各层（引擎钩子、字体语言、笔输入、沙箱文件、窗口外观）按 `docs/native/v0.18-port-plan.md` 的顺序加，一层一个补丁。
+合计 1,141 增 / 108 删，32 个文件改动点（v0.16 的分叉是 7,620 行 / 114 个文件）。
+
+**手写笔没有补丁**：0.18 的 `app.stylus.feed` 就是平台后端的投递入口，鸿蒙侧只做线格式与屏幕轴倾角，见 `docs/native/host-stylus.md`。
 
 ## 为什么是补丁而不是分叉
 
