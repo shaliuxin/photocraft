@@ -85,6 +85,34 @@ fn show_snap_extras_and_screen_modes_are_state() {
     assert_eq!(v["view"]["show"]["layer_edges"], true);
 }
 
+/// A shell that owns its own window asks its host for full screen: the viewport commands a
+/// desktop window would receive never reach it.
+#[test]
+fn screen_mode_asks_a_host_window_instead_of_the_viewport() {
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+    let (mut app, ctx) = app_with(1);
+    let state = Rc::new(Cell::new(false));
+    let asked = Rc::new(RefCell::new(Vec::new()));
+    let (s, a) = (state.clone(), asked.clone());
+    app.services.window_fullscreen = Some(crate::window_fullscreen::WindowFullscreen {
+        is_active: Box::new(move || s.get()),
+        request: Box::new(move |on| a.borrow_mut().push(on)),
+    });
+    let r = menu(&mut app, &ctx, "view.screenMode.fullScreen", json!({})).unwrap();
+    assert_eq!((r["screenMode"].clone(), r["fullScreen"].clone()), (json!("fullScreen"), json!(true)));
+    assert_eq!(app.ui.view.screen_mode, "fullScreen");
+    // Leaving Full Screen Mode asks for the standard window back.
+    state.set(true);
+    menu(&mut app, &ctx, "view.screenMode.standard", json!({})).unwrap();
+    assert_eq!(*asked.borrow(), vec![true, false]);
+    // The control id asks the host too, so a host or automation can toggle without the menu.
+    state.set(false);
+    let r = menu(&mut app, &ctx, crate::window_fullscreen::COMMAND, json!({})).unwrap();
+    assert_eq!(r["fullScreen"], json!(true));
+    assert_eq!(*asked.borrow(), vec![true, false, true]);
+}
+
 #[test]
 fn full_screen_and_maximized_never_overlap_on_windows() {
     use egui::ViewportCommand::{Fullscreen, Maximized};

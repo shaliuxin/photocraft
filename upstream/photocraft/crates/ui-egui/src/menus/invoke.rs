@@ -660,6 +660,14 @@ fn invoke_window_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str)
             crate::prefs_ui::cycle_appearance(app, ctx);
             Some(Ok(Value::Null))
         }
+        crate::window_fullscreen::COMMAND => {
+            // The host drives the window: ask it, and report what was asked for.
+            if crate::window_fullscreen::available(app) {
+                Some(Ok(json!({"fullScreen": crate::window_fullscreen::toggle(app)})))
+            } else {
+                Some(Err("this window has no host full screen".into()))
+            }
+        }
         "view.darkenInterface" | "view.lightenInterface" => {
             Some(crate::prefs_ui::step_brightness(app, ctx, id == "view.lightenInterface").map(|()| json!({"theme": app.ui.theme.id()})))
         }

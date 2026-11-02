@@ -66,11 +66,11 @@ pub struct Request {
 }
 
 fn only_id() -> egui::Id {
-    egui::Id::new("photocraft-path-pickers-only")
+    egui::Id::unique("photocraft-path-pickers-only")
 }
 
 fn request_id() -> egui::Id {
-    egui::Id::new("photocraft-path-pick-request")
+    egui::Id::unique("photocraft-path-pick-request")
 }
 
 /// Record, for this frame's widgets, whether path fields are picker-only.

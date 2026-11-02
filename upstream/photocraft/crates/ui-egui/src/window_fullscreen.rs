@@ -5,7 +5,8 @@
 
 use crate::{PhotocraftApp, i18n};
 
-/// Menu command id (Window › below Theme) that toggles host full screen.
+/// Control-command id that toggles host full screen from a host or automation. The menu entry
+/// point is Photoshop's View › Screen Mode (`F`), which routes here when a host offers it.
 pub const COMMAND: &str = "window.fullscreen.toggle";
 
 pub struct WindowFullscreen {
@@ -31,11 +32,6 @@ pub fn label(active: bool) -> &'static str {
     if active { "Exit Full Screen" } else { "Enter Full Screen" }
 }
 
-/// Icon name of the action the next click performs.
-pub fn icon(active: bool) -> &'static str {
-    if active { "fullscreen-exit" } else { "fullscreen-enter" }
-}
-
 /// Toggle: ask the host for the opposite of its current state.
 pub fn toggle(app: &PhotocraftApp) -> bool {
     let Some(f) = app.services.window_fullscreen.as_ref() else { return false };
@@ -49,6 +45,20 @@ pub fn tr_label(active: bool) -> String {
     i18n::tr(i18n::current(), label(active)).to_owned()
 }
 
+/// Follow the state the host reports, without asking it again: the system can leave full screen on
+/// its own (a gesture, a resize out of full screen) or refuse the request. Screen Mode is where the
+/// chrome reads it from, so both stay in step.
+pub fn adopt(app: &mut PhotocraftApp, ctx: &egui::Context, on: bool) {
+    let full = app.ui.view.screen_mode != "standard";
+    if full == on {
+        return;
+    }
+    app.ui.view.screen_mode = if on { "fullScreen" } else { "standard" }.to_owned();
+    // Tab's view of the chrome lasts only while in Full Screen Mode, as on the desktop.
+    app.ui.panels.full_screen_chrome = false;
+    ctx.request_repaint();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -56,17 +66,11 @@ mod tests {
     use std::rc::Rc;
 
     #[test]
-    fn labels_and_icons_follow_the_next_action() {
+    fn labels_follow_the_next_action() {
         assert_eq!(label(false), "Enter Full Screen");
         assert_eq!(label(true), "Exit Full Screen");
-        assert_eq!(icon(false), "fullscreen-enter");
-        assert_eq!(icon(true), "fullscreen-exit");
-        assert!(crate::icons::exists(icon(false)) && crate::icons::exists(icon(true)));
-        // Distinct from the "Only show canvas" button's glyph.
-        assert_ne!(icon(false), "maximize-2");
-        assert_ne!(icon(true), "maximize-2");
-        assert_ne!(icon(false), "canvas-only");
-        assert_ne!(icon(true), "canvas-only");
+        // The label is translated for the interface language (English when a catalogue lacks it).
+        assert_eq!(tr_label(false), i18n::tr(i18n::current(), "Enter Full Screen"));
     }
 
     #[test]
@@ -83,5 +87,23 @@ mod tests {
         state.set(true);
         assert!(active(&app) && !toggle(&app));
         assert_eq!(asked.get(), Some(false));
+    }
+
+    #[test]
+    fn adopt_mirrors_the_reported_state_without_asking_the_host() {
+        let asked = Rc::new(Cell::new(0));
+        let a = asked.clone();
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+        app.run("file.new", serde_json::json!({"width": 32, "height": 32})).unwrap();
+        app.services.window_fullscreen =
+            Some(WindowFullscreen { is_active: Box::new(|| false), request: Box::new(move |_| a.set(a.get() + 1)) });
+        let ctx = egui::Context::default();
+        assert_eq!(app.ui.view.screen_mode, "standard");
+        // The system left full screen by itself: Screen Mode follows, and nothing is requested.
+        adopt(&mut app, &ctx, true);
+        assert_eq!(app.ui.view.screen_mode, "fullScreen");
+        adopt(&mut app, &ctx, false);
+        assert_eq!(app.ui.view.screen_mode, "standard");
+        assert_eq!(asked.get(), 0);
     }
 }

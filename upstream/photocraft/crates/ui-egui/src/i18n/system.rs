@@ -260,7 +260,11 @@ mod tests {
     fn web_without_lang_follows_navigator_order() {
         let tags = locale_tags_from_browser("?webgl&cpu", ["sv-SE".into(), "zh-Hant-HK".into(), "en-US".into()]);
         assert_eq!(tags, ["sv-SE", "zh-Hant-HK", "en-US"]);
-        assert_eq!(resolve(&tags).code(), "zh-hant");
+        // Swedish has a catalogue, so the browser's first language wins over the Chinese second.
+        assert_eq!(resolve(&tags).code(), "sv");
+        // A language without one falls through to the next tag that has a catalogue.
+        let unsupported = locale_tags_from_browser("?webgl&cpu", ["sw-KE".into(), "zh-Hant-HK".into()]);
+        assert_eq!(resolve(&unsupported).code(), "zh-hant");
         assert_eq!(locale_tags_from_browser("", ["ja-JP".into()]), ["ja-JP"]);
         assert_eq!(locale_tags_from_browser("?lang=", ["fr-FR".into()]), ["fr-FR"]);
         assert_eq!(locale_tags_from_browser("?lang=%20", ["ko-KR".into()]), ["ko-KR"]);
@@ -268,8 +272,10 @@ mod tests {
 
     #[test]
     fn unsupported_lang_override_does_not_fall_through() {
-        let tags = locale_tags_from_browser("?lang=sv-SE", ["ja-JP".into()]);
-        assert_eq!(tags, ["sv-SE"]);
+        // `sw-KE` (Swahili) has no catalogue; the override still replaces the browser list, so
+        // Auto resolves to English instead of picking the navigator's Japanese.
+        let tags = locale_tags_from_browser("?lang=sw-KE", ["ja-JP".into()]);
+        assert_eq!(tags, ["sw-KE"]);
         assert_eq!(resolve(&tags), Lang::EN);
         assert!(locale_tags_from_browser("?lang=zh-Hans\0", ["ja-JP".into()]).is_empty());
         assert!(locale_tags_from_browser(&format!("?lang={}", "x".repeat(200)), ["ja-JP".into()]).is_empty());

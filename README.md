@@ -122,6 +122,16 @@ hdc shell aa start -a EntryAbility -b io.github.storytold.photocraft.hmos
 
 未配置本地调试签名时，脚本会提示先在 DevEco Studio 中完成签名配置。重新部署或执行 `launch` 会关闭当前窗口，请事先保存文档。更详细的原生适配与架构说明，见仓库内 [`native/README.md`](native/README.md)。
 
+想确认补丁没有改动上游行为时，可以直接跑上游自己的单测（不影响构建，只是一种校验）。它需要上游的可选字体输入 craft-fonts，否则界面用例会因为找不到 CJK 字形而 panic（上游 `docs/development.md` 也是同样要求）：
+
+```sh
+git clone https://github.com/storytold/craft-fonts ../craft-fonts
+cd upstream/photocraft
+CRAFT_FONTS_DIR="$PWD/../../../craft-fonts" cargo test -p photocraft-ui-egui --lib   # 必须是绝对路径
+```
+
+上次实测 4,478 通过 / 0 失败 / 21 忽略。Windows 上语言探测会起一次 `reg.exe`（`crates/text/src/cjk.rs` 的 `os_locale`），被本机安全策略拦掉只会让「跟随系统语言」返回空，鸿蒙侧用的是显式 `set_host_locale`，不受影响。
+
 ---
 
 ## 原生架构与验证

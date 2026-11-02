@@ -181,7 +181,7 @@ impl ImeSync {
                 .and_then(|id| ctx.read_response(id).map(|r| r.rect))
                 .unwrap_or(ime.rect);
             let tapped = self.tap.take().is_some_and(|p| editor_rect.contains(p));
-            let help_search = focused == Some(egui::Id::new("help-menu-search").with("field"));
+            let help_search = focused == Some(egui::Id::unique("help-menu-search").with("field"));
             if tapped || ((canvas.is_some() || help_search) && self.show_request == 0) {
                 self.show_request = self.show_request.saturating_add(1);
             }

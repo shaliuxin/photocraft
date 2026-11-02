@@ -421,7 +421,7 @@ index c9e1884..99a8f8b 100644
  use std::sync::OnceLock;
  
 diff --git a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs b/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
-index 9d59447..4abc498 100644
+index 9d59447..56c00d7 100644
 --- a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
 @@ -1,10 +1,18 @@
@@ -573,7 +573,7 @@ index 9d59447..4abc498 100644
  }
  
  #[cfg(test)]
-@@ -136,4 +244,43 @@ mod tests {
+@@ -136,4 +244,49 @@ mod tests {
          assert!(detected.len() <= MAX_SYSTEM_TAGS);
          assert!(detected.iter().all(|tag| !tag.is_empty() && tag.len() <= MAX_SYSTEM_TAG_BYTES));
      }
@@ -593,7 +593,11 @@ index 9d59447..4abc498 100644
 +    fn web_without_lang_follows_navigator_order() {
 +        let tags = locale_tags_from_browser("?webgl&cpu", ["sv-SE".into(), "zh-Hant-HK".into(), "en-US".into()]);
 +        assert_eq!(tags, ["sv-SE", "zh-Hant-HK", "en-US"]);
-+        assert_eq!(resolve(&tags).code(), "zh-hant");
++        // Swedish has a catalogue, so the browser's first language wins over the Chinese second.
++        assert_eq!(resolve(&tags).code(), "sv");
++        // A language without one falls through to the next tag that has a catalogue.
++        let unsupported = locale_tags_from_browser("?webgl&cpu", ["sw-KE".into(), "zh-Hant-HK".into()]);
++        assert_eq!(resolve(&unsupported).code(), "zh-hant");
 +        assert_eq!(locale_tags_from_browser("", ["ja-JP".into()]), ["ja-JP"]);
 +        assert_eq!(locale_tags_from_browser("?lang=", ["fr-FR".into()]), ["fr-FR"]);
 +        assert_eq!(locale_tags_from_browser("?lang=%20", ["ko-KR".into()]), ["ko-KR"]);
@@ -601,8 +605,10 @@ index 9d59447..4abc498 100644
 +
 +    #[test]
 +    fn unsupported_lang_override_does_not_fall_through() {
-+        let tags = locale_tags_from_browser("?lang=sv-SE", ["ja-JP".into()]);
-+        assert_eq!(tags, ["sv-SE"]);
++        // `sw-KE` (Swahili) has no catalogue; the override still replaces the browser list, so
++        // Auto resolves to English instead of picking the navigator's Japanese.
++        let tags = locale_tags_from_browser("?lang=sw-KE", ["ja-JP".into()]);
++        assert_eq!(tags, ["sw-KE"]);
 +        assert_eq!(resolve(&tags), Lang::EN);
 +        assert!(locale_tags_from_browser("?lang=zh-Hans\0", ["ja-JP".into()]).is_empty());
 +        assert!(locale_tags_from_browser(&format!("?lang={}", "x".repeat(200)), ["ja-JP".into()]).is_empty());

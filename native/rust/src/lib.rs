@@ -844,7 +844,12 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
                             return Ok(());
                         }
                         if value.kind == fullscreen::INPUT_KIND {
-                            if host_fullscreen.report(&value.text) {
+                            let changed = host_fullscreen.report(&value.text);
+                            // The window is the truth: Screen Mode follows it, so the chrome and the
+                            // menu agree even when the system leaves full screen by itself. A no-op
+                            // when the app just asked for that state.
+                            photocraft_ui_egui::window_fullscreen::adopt(&mut app, &ctx, host_fullscreen.active());
+                            if changed {
                                 ctx.request_repaint();
                                 deadline = Some(Instant::now());
                             }
