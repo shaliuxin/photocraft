@@ -116,8 +116,8 @@ scripts/dev.sh launch   # 重新启动已经装好的应用
 
 ```sh
 hdc install -r entry/build/default/outputs/default/entry-default-signed.hap
-hdc shell aa force-stop io.github.storytold.photocraft.hmos
-hdc shell aa start -a EntryAbility -b io.github.storytold.photocraft.hmos
+hdc shell aa force-stop io.github.shaliuxin.photocraft.hmos
+hdc shell aa start -a EntryAbility -b io.github.shaliuxin.photocraft.hmos
 ```
 
 未配置本地调试签名时，脚本会提示先在 DevEco Studio 中完成签名配置。重新部署或执行 `launch` 会关闭当前窗口，请事先保存文档。更详细的原生适配与架构说明，见仓库内 [`native/README.md`](native/README.md)。

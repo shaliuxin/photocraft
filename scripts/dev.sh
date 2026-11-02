@@ -11,7 +11,7 @@ export JAVA_HOME="${JAVA_HOME:-/Applications/DevEco-Studio.app/Contents/jbr/Cont
 # PackageHap shells out to `java` by name (JAVA_HOME alone is not enough on Windows), and
 # hvigor itself is a node script, so both have to be on PATH before it runs.
 export PATH="$JAVA_HOME/bin:/Applications/DevEco-Studio.app/Contents/tools/node/bin:$PATH"
-BUNDLE="${PHOTOCRAFT_BUNDLE:-io.github.storytold.photocraft.hmos}"
+BUNDLE="${PHOTOCRAFT_BUNDLE:-io.github.shaliuxin.photocraft.hmos}"
 # ABIs to build and package. Both by default, so one HAP covers ARM devices and the x86_64
 # phone/PC emulator images; set PHOTOCRAFT_ABIS to a single ABI for a faster loop.
 ABIS="${PHOTOCRAFT_ABIS:-arm64-v8a x86_64}"

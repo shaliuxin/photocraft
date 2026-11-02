@@ -13,7 +13,7 @@
       { "name": "release" }
     ],
     "capabilities": [
-      { "bundleName": "io.github.storytold.photocraft.hmos", "config": [] }
+      { "bundleName": "io.github.shaliuxin.photocraft.hmos", "config": [] }
     ]
   },
   "modules": [

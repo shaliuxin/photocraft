@@ -47,14 +47,14 @@
               {"scheme": "file", "type": "com.truevision.tga-image", "linkFeature": "FileOpen"},
               {"scheme": "file", "type": "com.ilm.openexr-image", "linkFeature": "FileOpen"},
               {"scheme": "file", "type": "com.adobe.photoshop-image", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.pcraft", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.webp", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.heif", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.psb", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.qoi", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.hdr", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.portable-image", "linkFeature": "FileOpen"},
-              {"scheme": "file", "type": "io.github.storytold.photocraft.hmos.camera-raw", "linkFeature": "FileOpen"}
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.pcraft", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.webp", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.heif", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.psb", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.qoi", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.hdr", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.portable-image", "linkFeature": "FileOpen"},
+              {"scheme": "file", "type": "io.github.shaliuxin.photocraft.hmos.camera-raw", "linkFeature": "FileOpen"}
             ]
           }
         ]

@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "io.github.storytold.photocraft.hmos",
+    "bundleName": "io.github.shaliuxin.photocraft.hmos",
     "vendor": "photocraft-hmos",
     "versionCode": 180001,
     "versionName": "0.18.0.1",
