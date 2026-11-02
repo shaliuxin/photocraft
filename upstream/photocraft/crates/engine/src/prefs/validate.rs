@@ -2,8 +2,8 @@ use super::shortcuts::normalize_shortcut;
 use super::{
     AppearanceMode, Ask, CanvasBorder, CanvasColor, CheckerColors, CheckerSize, ColorPicker, DarkTheme, ExportLocation, ExportMetadata, FontPreview,
     GpuBackend, Interpolation, LightTheme, LineStyle, LinuxDisplayServer, LogDestination, LogDetail, OtherCursor, PaintingCursor, PointSize, PressureCurve,
-    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, TextEngine, Theme, TypeUnit, UiFontSize, UiScale,
-    Unit, Value,
+    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, StylusDoubleTap, StylusLongPress,
+    TextEngine, Theme, TypeUnit, UiFontSize, UiScale, Unit, Value,
 };
 
 /// Preferences dialog sections in Photoshop's order: (id, title).
@@ -49,13 +49,27 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
     "enhancedControls.scrubbySliderAcceleration",
 ];
 
-/// Is the preference at `path` (`"section.key"`) hidden from the Preferences dialog?
-pub fn is_hidden(path: &str) -> bool {
-    HIDDEN_UNTIL_IMPLEMENTED.contains(&path) || (!cfg!(target_os = "linux") && LINUX_ONLY.contains(&path))
+/// Desktop Linux (X11/Wayland). HarmonyOS / OHOS builds must not show this preference.
+/// Official OHOS triples (`*-linux-ohos`) still report `target_os = "linux"`; gate on
+/// `target_env = "ohos"` instead (same style as wasm's `target_arch = "wasm32"`). Cross-compile
+/// HarmonyOS HAP Rust with an ohos triple so this cfg is true.
+pub const fn is_desktop_linux() -> bool {
+    cfg!(all(target_os = "linux", not(target_env = "ohos")))
 }
 
-/// Preferences that only do something on Linux; the dialog doesn't show them elsewhere. They
-/// still load, save and round-trip on every platform.
+/// Is the preference at `path` (`"section.key"`) hidden from the Preferences dialog?
+pub fn is_hidden(path: &str) -> bool {
+    is_hidden_for(path, is_desktop_linux())
+}
+
+/// Same as [`is_hidden`], with an explicit desktop-Linux flag so OHOS/non-Linux behaviour can
+/// be unit-tested on any host.
+pub fn is_hidden_for(path: &str, desktop_linux: bool) -> bool {
+    HIDDEN_UNTIL_IMPLEMENTED.contains(&path) || (!desktop_linux && LINUX_ONLY.contains(&path))
+}
+
+/// Preferences that only do something on desktop Linux; the dialog doesn't show them on
+/// Windows, macOS, wasm, or OHOS/HarmonyOS. They still load, save and round-trip everywhere.
 pub const LINUX_ONLY: &[&str] = &["performance.linuxDisplayServer", "performance.gpuAdapter"];
 
 /// Whether a graphics adapter called `name` is the one `performance.gpuAdapter` (`wanted`) asks
@@ -89,6 +103,8 @@ pub fn choices(path: &str) -> Option<&'static [&'static str]> {
         "cursors.painting" => PaintingCursor::NAMES,
         "cursors.other" => OtherCursor::NAMES,
         "tools.rightClickWithPaintingTools" => RightClickPaint::NAMES,
+        "tools.stylusDoubleTap" => StylusDoubleTap::NAMES,
+        "tools.stylusLongPress" => StylusLongPress::NAMES,
         "transparencyAndGamut.gridSize" => CheckerSize::NAMES,
         "transparencyAndGamut.gridColors" => CheckerColors::NAMES,
         "unitsAndRulers.rulers" | "guidesGridAndSlices.gridUnit" => Unit::NAMES,

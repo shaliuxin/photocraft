@@ -25,6 +25,11 @@ mod system;
 
 pub use system::system_lang;
 
+/// Supply the system locale for an embedded native host before its first frame.
+pub fn set_host_locale(tag: &str) {
+    system::set_host_locale(tag);
+}
+
 use std::cell::Cell;
 use std::sync::OnceLock;
 
