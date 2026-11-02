@@ -36,6 +36,8 @@ mod input;
 mod recovery;
 #[cfg(any(target_env = "ohos", test))]
 mod startup;
+#[cfg(any(target_env = "ohos", test))]
+mod stylus;
 #[cfg(target_env = "ohos")]
 mod render;
 #[cfg(any(target_env = "ohos", test))]
@@ -621,7 +623,7 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
     let started = Instant::now();
     let mut events = vec![];
     let mut input = input::State::default();
-    input.feed = app.stylus.feed.clone();
+    input.pen = stylus::PenLink::new(app.stylus.feed.clone());
     let mut ime = ime::ImeSync::default();
     let mut close = false;
     let mut chrome = chrome::ChromeSync::default();

@@ -1,5 +1,5 @@
+use crate::stylus::{PenLink, PenReading, PointerSource, StylusPacket};
 use egui::{Event, Key, Modifiers, PointerButton, Pos2};
-use photocraft_ui_egui::stylus::{PenSample, PointerSource, StylusFeed, StylusInput};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
@@ -15,13 +15,6 @@ pub struct Contact {
     pub id: u64,
     pub x: f32,
     pub y: f32,
-}
-
-#[derive(Deserialize)]
-pub struct StylusPacket {
-    version: u32,
-    #[serde(flatten)]
-    input: StylusInput,
 }
 
 #[derive(Deserialize, Default)]
@@ -60,7 +53,7 @@ pub struct Input {
     #[serde(default)]
     pub source: PointerSource,
     #[serde(default)]
-    pub sample: Option<PenSample>,
+    pub sample: Option<PenReading>,
     /// Quarter turns clockwise of the display (0..=3), sent when the system rotation changes.
     #[serde(default)]
     pub rotation: u8,
@@ -133,9 +126,8 @@ pub struct State {
     mouse_echo_guard: Option<(Instant, Pos2)>,
     axis_zoom: Option<f32>,
     pub modifiers: Modifiers,
-    pub feed: StylusFeed,
-    /// Input belongs to this viewport; diagnostic hover positions use its local points.
-    pub viewport: egui::ViewportId,
+    /// 手写笔入口：写进 `app.stylus.feed`，压力/倾斜由上游 0.18 的笔逻辑消费。
+    pub pen: PenLink,
 }
 impl State {
     fn move_pointer(&mut self, pos: Pos2, events: &mut Vec<Event>) {
@@ -273,8 +265,6 @@ impl State {
 
     pub fn cancel(&mut self, events: &mut Vec<Event>) {
         let release = self.pressed.take().zip(self.last_pointer.take());
-        self.feed.clear_hover(self.viewport);
-        self.feed.clear_contact(self.viewport);
         self.clear_touches(events);
         self.pen_down = false;
         self.hover_origin = None;
@@ -298,7 +288,7 @@ impl State {
             });
         }
         events.push(Event::PointerGone);
-        self.feed.report(PointerSource::Mouse, None);
+        self.pen.report(PointerSource::Mouse, None);
         self.modifiers = Modifiers::NONE;
         events.push(Event::ModifiersChanged(self.modifiers));
     }
@@ -333,10 +323,11 @@ impl State {
         let pos = Pos2::new(input.x / scale, input.y / scale);
         match input.kind.as_str() {
             "stylus" => {
+                // 版本不认识就整包丢弃：宁可没有笔手势，也不要按错的语义执行。
                 if let Some(packet) = input.packet
-                    && packet.version == 1
+                    && packet.version == crate::stylus::VERSION
                 {
-                    self.feed.submit(packet.input);
+                    self.pen.submit(packet.input);
                 }
             }
             "touch" => {
@@ -370,7 +361,7 @@ impl State {
                 } else {
                     self.mouse_echo_guard = None;
                 }
-                self.feed.report(PointerSource::Touch, None);
+                self.pen.report(PointerSource::Touch, None);
                 for (&id, &pos) in &self.touches {
                     if !next.contains_key(&id) {
                         events.push(Event::Touch {
@@ -469,7 +460,7 @@ impl State {
                 // the lift frame. They do not establish a new pointer owner: changing
                 // Touch to Mouse bypasses the canvas's block-finger-input preference.
                 if !self.finger_owns_pointer() && !self.touch_settling() {
-                    self.feed.report(PointerSource::Mouse, None);
+                    self.pen.report(PointerSource::Mouse, None);
                 }
                 self.move_pointer(pos, events);
                 if input.zoom.is_finite() && input.zoom > 0.0 {
@@ -486,6 +477,8 @@ impl State {
                         unit: egui::MouseWheelUnit::Point,
                         phase: egui::TouchPhase::Move,
                         delta: egui::vec2(input.dx / scale, input.dy / scale),
+                        // ArkUI 的 axis 回调不区分滚轮和触控板，如实报 Unknown。
+                        source: egui::MouseWheelSource::Unknown,
                         modifiers: self.modifiers,
                     });
                 }
@@ -510,7 +503,7 @@ impl State {
                 if input.action == 3 {
                     let resume = (self.preview_hidden
                         || input.source == PointerSource::Pen
-                        || self.feed.source() == PointerSource::Pen)
+                        || self.pen.source() == PointerSource::Pen)
                         .then(|| {
                             self.preview_resume
                                 .take()
@@ -563,7 +556,6 @@ impl State {
                         });
                     }
                     self.pen_down = true;
-                    self.feed.clear_hover(self.viewport);
                     self.contact_origin = Some(pos);
                     self.preview_resume = None;
                     self.preview_hidden = false;
@@ -574,11 +566,7 @@ impl State {
                 if self.pen_down && is_hover_move {
                     return;
                 }
-                if input.source == PointerSource::Pen && !is_hover_move && input.action != 1 {
-                    self.feed.report_contact(self.viewport, [pos.x, pos.y]);
-                }
                 if input.source == PointerSource::Pen && is_hover_move {
-                    self.feed.report_hover(self.viewport, [pos.x, pos.y]);
                     let over_canvas = self
                         .pen_hover_canvas
                         .is_none_or(|canvas| canvas.contains(pos));
@@ -613,11 +601,9 @@ impl State {
                 let pen_up = input.source == PointerSource::Pen && input.action == 1;
                 if pen_up {
                     self.pen_down = false;
-                    self.feed.clear_hover(self.viewport);
-                    self.feed.clear_contact(self.viewport);
                     self.hide_pen_preview();
                 }
-                self.feed.report(input.source, input.sample);
+                self.pen.report(input.source, input.sample);
                 self.move_pointer(pos, events);
                 let button = match input.button {
                     1 => PointerButton::Secondary,
@@ -655,18 +641,19 @@ impl State {
                 if self.pen_down {
                     return;
                 }
-                self.feed.clear_hover(self.viewport);
-                self.feed.clear_contact(self.viewport);
-                if self.feed.source() == PointerSource::Pen {
+                if self.pen.source() == PointerSource::Pen {
                     self.hide_pen_preview();
                 }
                 events.push(Event::PointerGone);
             }
-            "display_rotation" => self.feed.set_display_rotation(input.rotation, input.landscape),
+            "display_rotation" => self
+                .pen
+                .set_display_rotation(input.rotation, input.landscape),
             "wheel" => events.push(Event::MouseWheel {
                 unit: egui::MouseWheelUnit::Point,
                 phase: egui::TouchPhase::Move,
                 delta: egui::vec2(input.x, input.y),
+                source: egui::MouseWheelSource::Wheel,
                 modifiers: self.modifiers,
             }),
             "key" => {

@@ -4,47 +4,61 @@ use egui::{ViewportClass, ViewportCommand};
 const ROOT_SIZE: egui::Vec2 = egui::vec2(1000., 800.);
 
 #[test]
-fn stylus_debug_uses_native_viewport_with_shared_pen_feed_and_system_close() {
-    use photocraft_ui_egui::{PhotocraftApp, stylus::PointerSource};
+fn native_sub_window_opens_with_its_title_and_closes_from_the_system_button() {
     let ctx = egui::Context::default();
-    // HarmonyOS normally embeds non-document viewports. The monitor opts in only for itself.
+    // HarmonyOS normally embeds non-document viewports; the registry opens native ones.
     assert!(ctx.embed_viewports());
-    PhotocraftApp::setup_context(&ctx, Default::default());
-    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
-    app.native_doc_windows = true;
-    app.ui.stylus_debug.set_open(true, &app.stylus.feed.diagnostics());
-    let registry = Rc::new(RefCell::new(Registry::new(1., app.stylus.feed.clone())));
+    let registry = Rc::new(RefCell::new(Registry::new(1., Default::default())));
     install(registry.clone());
-    let mut render = |time| {
+    let mut seen = Seen::default();
+    let mut render = |time, show: bool| {
         registry.borrow_mut().begin_frame(time, None, 1.);
-        let output = ctx.run_ui(egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, ROOT_SIZE)), ..Default::default() }, |ui| {
-            photocraft_ui_egui::stylus_debug::window(&mut app, ui.ctx());
-        });
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, ROOT_SIZE)),
+                ..Default::default()
+            },
+            |ui| {
+                if show {
+                    ui.ctx().show_viewport_immediate(
+                        doc_id(),
+                        ViewportBuilder::default()
+                            .with_title("Test Doc")
+                            .with_inner_size([600., 720.]),
+                        |ui, _class| {
+                            seen.calls += 1;
+                            seen.close_requested =
+                                ui.ctx().input(|i| i.viewport().close_requested());
+                        },
+                    );
+                }
+            },
+        );
         assert!(ctx.embed_viewports(), "other UI retains its embedding preference");
         let mut finished = registry.borrow_mut().finish_frame(&output.viewport_output);
         finished.textures.clear();
         finished
     };
-    assert_eq!(render(0.).frames.len(), 1);
-    assert!(matches!(registry.borrow_mut().take_outbox().as_slice(), [Command::Open {key:1, title, width:600, height:720, ..}] if title == "Stylus Debug"));
+    assert_eq!(render(0., true).frames.len(), 1);
+    assert!(
+        matches!(
+            registry.borrow_mut().take_outbox().as_slice(),
+            [Command::Open { key: 1, title, width: 600, height: 720, .. }] if title == "Test Doc"
+        ),
+        "the registry asks for one native window with the viewport's title and size"
+    );
     registry.borrow_mut().attach(1, 600, 720);
     registry.borrow_mut().push_input(
         1,
         serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":0,"x":50,"y":540,"sample":{"pressure":0.4,"tiltX":30,"tiltY":-20}}"#).unwrap(),
         1.,
     );
-    render(0.1);
+    render(0.1, true);
     registry.borrow_mut().request_close(1);
-    render(0.2);
-    assert_eq!(render(0.3).closed, [1]);
+    render(0.2, true);
+    assert_eq!(render(0.3, true).closed, [1]);
     drop(render);
-    assert!(!app.ui.stylus_debug.open, "one system close click closes the monitor");
-    assert!(!app.ui.stylus_debug.open);
-    let d = app.stylus.feed.diagnostics();
-    assert_eq!(d.samples, 1);
-    assert_eq!(d.last_pen.unwrap().tilt_x, 30.);
-    assert_eq!(app.stylus.feed.source(), PointerSource::Pen);
-    assert!(app.session.journal.is_empty(), "testing in a sub-window never edits a document");
+    assert!(seen.close_requested, "the sub-window sees the system close");
 }
 
 fn context() -> egui::Context {
@@ -317,6 +331,8 @@ fn floating_document_windows_become_native_windows_without_embedding_the_rest() 
         document: 0,
         view: Default::default(),
         open: true,
+        floating: true,
+        focused: false,
         position: Some([20., 30.]),
     });
     let run = |app: &mut PhotocraftApp| {
@@ -364,6 +380,8 @@ fn without_native_support_floating_windows_stay_embedded() {
         document: 0,
         view: Default::default(),
         open: true,
+        floating: true,
+        focused: false,
         position: None,
     });
     registry.borrow_mut().begin_frame(0.0, None, 1.0);

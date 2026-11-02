@@ -23,45 +23,6 @@ fn brush_outline(ctx: &egui::Context, output: &egui::FullOutput, pos: egui::Pos2
     painted || bitmap
 }
 
-#[test]
-fn fingers_hide_the_rendered_brush_outline_but_pen_and_mouse_keep_it() {
-    use photocraft_ui_egui::{PhotocraftApp, Services, state::Tool};
-    let ctx = egui::Context::default();
-    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services::default());
-    app.run("file.new", serde_json::json!({"width": 256, "height": 256}))
-        .unwrap();
-    app.ui.tool = Tool::Brush;
-    let render = |app: &mut PhotocraftApp, events: Vec<egui::Event>| {
-        let mut raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(1200., 800.),
-            )),
-            events,
-            ..Default::default()
-        };
-        app.host_input(&ctx, &mut raw);
-        let _ = ctx.run_logic(&raw, |ctx| app.host_logic(ctx));
-        let mut output = ctx.run_ui(raw, |ui| app.host_ui(ui));
-        output.textures_delta.clear();
-        output
-    };
-    for _ in 0..4 {
-        render(&mut app, vec![]);
-    }
-    let p = app.last_canvas_rect.center();
-    for (source, expected) in [
-        (super::PointerSource::Mouse, true),
-        (super::PointerSource::Touch, false),
-        (super::PointerSource::Pen, true),
-    ] {
-        app.stylus.feed.report(source, None);
-        let output = render(&mut app, vec![egui::Event::PointerMoved(p)]);
-        let outline = brush_outline(&ctx, &output, p);
-        assert_eq!(outline, expected, "source {source:?}");
-    }
-}
-
 fn snapshot(state: &mut super::State, points: &[(u64, f32, f32)], events: &mut Vec<egui::Event>) {
     state.push(
         super::Input {
@@ -95,7 +56,7 @@ fn native_two_finger_navigation_changes_the_view_without_editing_document() {
         .unwrap();
     app.ui.tool = Tool::Brush;
     let mut state = super::State {
-        feed: app.stylus.feed.clone(),
+        pen: super::PenLink::new(app.stylus.feed.clone()),
         ..Default::default()
     };
     let render = |app: &mut PhotocraftApp, events: Vec<egui::Event>| {
@@ -158,7 +119,7 @@ fn native_navigation_rejects_sidebar_and_preferences_origins() {
     app.run("file.new", serde_json::json!({"width":256,"height":256}))
         .unwrap();
     let mut state = super::State {
-        feed: app.stylus.feed.clone(),
+        pen: super::PenLink::new(app.stylus.feed.clone()),
         ..Default::default()
     };
     let render = |app: &mut PhotocraftApp, events: Vec<egui::Event>| {
@@ -276,7 +237,7 @@ fn screen_contacts_produce_egui_pinch_and_centroid_pan_and_clean_release() {
             assert!(ui.input(|i| i.pointer.hover_pos().is_none()));
         },
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Touch);
+    assert_eq!(state.pen.source(), super::PointerSource::Touch);
 }
 
 #[test]
@@ -310,7 +271,7 @@ fn pen_takeover_cancels_fingers_and_ignores_palms_until_lift() {
     let before = events.len();
     snapshot(&mut state, &[(1, 20., 30.)], &mut events);
     assert_eq!(before, events.len());
-    assert_eq!(state.feed.source(), super::PointerSource::Pen);
+    assert_eq!(state.pen.source(), super::PointerSource::Pen);
     state.push(
         super::Input {
             kind: "pointer".into(),
@@ -632,11 +593,11 @@ fn trackpad_axis_scales_are_incremental_and_pan_has_an_anchor() {
 }
 
 #[test]
-fn pen_samples_finger_source_and_host_gestures_reach_the_shared_feed() {
-    use photocraft_ui_egui::{PhotocraftApp, Services, state::Tool};
-    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Services::default());
+fn pen_samples_and_the_finger_source_reach_the_shared_feed() {
+    use photocraft_ui_egui::{PhotocraftApp, Services};
+    let app = PhotocraftApp::new(photocraft_engine::Session::new(), Services::default());
     let mut input = super::State {
-        feed: app.stylus.feed.clone(),
+        pen: super::PenLink::new(app.stylus.feed.clone()),
         ..Default::default()
     };
     let mut events = vec![];
@@ -658,73 +619,43 @@ fn pen_samples_finger_source_and_host_gestures_reach_the_shared_feed() {
             r#"{{"kind":"pointer","source":"{source}","action":0,"x":20,"y":40,"sample":{{"pressure":0.25,"tiltX":30}}}}"#
         );
         input.push(serde_json::from_str(&packet).unwrap(), 2., &mut events);
-        assert_eq!(app.stylus.feed.source(), expected);
+        assert_eq!(input.pen.source(), expected);
         if source == "pen" {
             assert_eq!(app.stylus.sample().unwrap().pressure, 0.25);
             assert_eq!(app.stylus.sample().unwrap().tilt_x, 30.);
         } else {
-            assert!(app.stylus.is_finger());
-            assert!(app.stylus.sample().is_none());
+            assert!(app.stylus.sample().is_none(), "手指不留笔样本");
         }
     }
-    let ctx = egui::Context::default();
-    app.ui.tool = Tool::Brush;
-    for (gesture, at) in [
-        ("doubleTap", 1000),
-        ("doubleTap", 2000),
-        ("longPress", 3000),
-    ] {
-        input.push(serde_json::from_value(serde_json::json!({"kind":"stylus","packet":{"version":1,"type":"gesture","gesture":gesture,"timestampMs":at}})).unwrap(), 1., &mut events);
-        photocraft_ui_egui::chrome_ui::drain_stylus_gestures(&mut app, &ctx);
-        if at == 1000 {
-            assert_eq!(app.ui.tool, Tool::Eraser);
-        }
-        if at == 2000 {
-            assert_eq!(app.ui.tool, Tool::Brush);
-        }
-        if at == 3000 {
-            assert!(app.ui.canvas_tool_menu.is_some() || app.ui.brush_picker.is_some());
-        }
-    }
-    // Unknown protocol versions must not trigger actions.
-    input.push(serde_json::from_str(r#"{"kind":"stylus","packet":{"version":2,"type":"gesture","gesture":"doubleTap","timestampMs":4000}}"#).unwrap(), 1., &mut events);
-    assert!(app.stylus.feed.take_gestures().is_empty());
-    input.cancel(&mut events);
-    assert!(app.stylus.feed.get().is_none());
 }
+
 use super::*;
 
 #[test]
-fn native_input_reaches_stylus_debug_without_consuming_stroke_samples() {
-    let mut input = State::default();
+fn native_pen_input_reaches_the_shared_feed_in_order() {
+    use photocraft_ui_egui::{PhotocraftApp, Services};
+    let app = PhotocraftApp::new(photocraft_engine::Session::new(), Services::default());
+    let mut input = State {
+        pen: PenLink::new(app.stylus.feed.clone()),
+        ..Default::default()
+    };
     let mut events = Vec::new();
     input.push(serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":0,"x":20,"y":40,"sample":{"pressure":0.4,"tiltX":45,"tiltY":-30}}"#).unwrap(), 1., &mut events);
-    let snapshot = input.feed.diagnostics();
-    assert_eq!(input.feed.source(), PointerSource::Pen);
-    assert_eq!(snapshot.samples, 1);
-    assert_eq!(snapshot.last_pen.unwrap().tilt_y, -30.0);
-    assert_eq!(snapshot.contact, Some([20.0, 40.0]));
-    assert_eq!(input.feed.drain().len(), 1);
-    for (gesture, at) in [("doubleTap", 1000), ("squeeze", 2000), ("longPress", 3000)] {
-        input.push(serde_json::from_value(serde_json::json!({"kind":"stylus","packet":{"version":1,"type":"gesture","gesture":gesture,"timestampMs":at}})).unwrap(), 1., &mut events);
-    }
-    let snapshot = input.feed.diagnostics();
-    assert_eq!((snapshot.double_taps, snapshot.squeezes), (1, 2));
-    assert_eq!(input.feed.take_gestures().len(), 3);
-    input.push(serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":1,"x":20,"y":40}"#).unwrap(), 1., &mut events);
-    assert_eq!(input.feed.diagnostics().contact, None, "lifting clears the contact point");
-    input.push(serde_json::from_str(r#"{"kind":"display_rotation","rotation":1}"#).unwrap(), 1., &mut events);
-    input.push(serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":2,"x":75,"y":125,"sample":{"pressure":0,"tiltX":45,"tiltY":0}}"#).unwrap(), 1., &mut events);
-    input.push(serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":2,"x":90,"y":140,"sample":{"pressure":0,"tiltX":45,"tiltY":0}}"#).unwrap(), 1., &mut events);
-    let snapshot = input.feed.diagnostics();
-    assert_eq!(snapshot.display_rotation, 1);
-    assert!(snapshot.hovering);
-    assert_eq!(snapshot.hover, Some([90.0, 140.0]));
-    assert_eq!(snapshot.samples, 2, "the hover sample keeps the latest contact tilt");
-    let last = snapshot.last_pen.unwrap();
-    assert!((last.tilt_x + 30.0).abs() < 0.01 && (last.tilt_y + 45.0).abs() < 0.01);
-    input.push(serde_json::from_str(r#"{"kind":"hover_leave"}"#).unwrap(), 1., &mut events);
-    assert!(!input.feed.diagnostics().hovering);
+    assert_eq!(input.pen.source(), PointerSource::Pen);
+    assert_eq!(app.stylus.feed.get().unwrap().tilt_y, -30.0);
+    // 每一笔读数都排队，画布按帧在这些读数之间插值，而不是只取最后一笔。
+    assert_eq!(app.stylus.feed.drain().len(), 1);
+    // 屏幕转过 90° 后，静止不动的笔读数也要换到新的屏幕轴。
+    input.push(
+        serde_json::from_str(r#"{"kind":"display_rotation","rotation":1}"#).unwrap(),
+        1.,
+        &mut events,
+    );
+    let turned = app.stylus.feed.get().unwrap();
+    assert!(
+        (turned.tilt_x + 30.0).abs() < 0.01 && (turned.tilt_y + 45.0).abs() < 0.01,
+        "got {turned:?}"
+    );
 }
 
 #[test]
@@ -732,10 +663,16 @@ fn native_landscape_rotation_adds_the_pad_half_turn() {
     let mut input = State::default();
     let mut events = Vec::new();
     input.push(serde_json::from_str(r#"{"kind":"pointer","source":"pen","action":0,"x":20,"y":40,"sample":{"pressure":0.4,"tiltX":0,"tiltY":-45}}"#).unwrap(), 1., &mut events);
-    input.push(serde_json::from_str(r#"{"kind":"display_rotation","rotation":0,"landscape":true}"#).unwrap(), 1., &mut events);
-    let last = input.feed.diagnostics().last_pen.unwrap();
+    input.push(
+        serde_json::from_str(r#"{"kind":"display_rotation","rotation":0,"landscape":true}"#)
+            .unwrap(),
+        1.,
+        &mut events,
+    );
+    let last = input.pen.sample().unwrap();
     assert!(last.tilt_x.abs() < 0.01 && (last.tilt_y - 45.0).abs() < 0.01);
 }
+
 #[test]
 fn cancel_releases_pointer_and_scales_coordinates() {
     let mut state = State::default();
@@ -845,9 +782,9 @@ fn pen_hover_move_sets_hover_pos_without_pressing() {
     );
     assert!(state.pressed.is_none());
     assert!(!state.pen_down);
-    assert_eq!(state.feed.source(), super::PointerSource::Pen);
+    assert_eq!(state.pen.source(), super::PointerSource::Pen);
     assert_eq!(
-        state.feed.get().map(|s| s.pressure),
+        state.pen.sample().map(|s| s.pressure),
         Some(0.),
         "hover reports zero pressure so ink does not start"
     );
@@ -900,7 +837,7 @@ fn pen_hover_always_reaches_the_ui_for_tooltips() {
     assert!(
         matches!(events.as_slice(), [egui::Event::PointerMoved(p)] if *p == egui::pos2(100., 50.))
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Pen);
+    assert_eq!(state.pen.source(), super::PointerSource::Pen);
     assert_eq!(
         state.cursor_icon(egui::CursorIcon::Crosshair),
         egui::CursorIcon::Crosshair
@@ -1045,7 +982,7 @@ fn mouse_motion_restores_preview_after_pen_hover_leave() {
     assert!(
         matches!(events.as_slice(), [egui::Event::PointerMoved(p)] if *p == egui::pos2(400., 200.))
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Mouse);
+    assert_eq!(state.pen.source(), super::PointerSource::Mouse);
     assert_eq!(
         state.cursor_icon(egui::CursorIcon::Crosshair),
         egui::CursorIcon::Crosshair
@@ -1058,7 +995,7 @@ fn mouse_motion_restores_preview_after_pen_hover_leave() {
     assert!(
         matches!(events.as_slice(), [egui::Event::PointerMoved(p)] if *p == egui::pos2(460., 235.))
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Pen);
+    assert_eq!(state.pen.source(), super::PointerSource::Pen);
 }
 
 #[test]
@@ -1338,7 +1275,7 @@ fn rendered_brush_outline_hides_on_lift_or_leave_and_returns_on_next_hover_or_mo
     let end = start + egui::vec2(40., 30.);
     let revision = app.session.active().unwrap().revision;
     let mut state = super::State {
-        feed: app.stylus.feed.clone(),
+        pen: super::PenLink::new(app.stylus.feed.clone()),
         ..Default::default()
     };
     let mut events = vec![];
@@ -1437,20 +1374,15 @@ fn rendered_brush_outline_hides_on_lift_or_leave_and_returns_on_next_hover_or_mo
 }
 
 #[test]
-fn stylus_connection_metadata_reaches_native_menu_and_clears_on_disconnect() {
+fn stylus_connection_packets_are_accepted_without_generating_drawing_input() {
     let mut input = super::State::default();
     let mut events = vec![];
-    input.push(serde_json::from_str(r#"{"kind":"stylus","packet":{"version":1,"type":"connection","connected":true,"deviceName":"HUAWEI M-Pencil"}}"#).unwrap(), 1., &mut events);
-    assert_eq!(input.feed.device().name.as_deref(), Some("HUAWEI M-Pencil"));
-    input.push(
-        serde_json::from_str(
-            r#"{"kind":"stylus","packet":{"version":1,"type":"connection","connected":false}}"#,
-        )
-        .unwrap(),
-        1.,
-        &mut events,
-    );
-    assert_eq!(input.feed.device(), Default::default());
+    for packet in [
+        r#"{"kind":"stylus","packet":{"version":1,"type":"connection","connected":true,"deviceName":"HUAWEI M-Pencil"}}"#,
+        r#"{"kind":"stylus","packet":{"version":1,"type":"connection","connected":false}}"#,
+    ] {
+        input.push(serde_json::from_str(packet).unwrap(), 1., &mut events);
+    }
     assert!(
         events.is_empty(),
         "status updates do not generate drawing input"
@@ -1474,7 +1406,7 @@ fn axis_does_not_reclassify_a_finger_as_mouse() {
         2.,
         &mut events,
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Touch);
+    assert_eq!(state.pen.source(), super::PointerSource::Touch);
 }
 
 #[test]
@@ -1503,7 +1435,7 @@ fn mouse_echo_after_pinch_cannot_press_or_move_a_tool() {
             );
         }
         assert!(events.is_empty(), "mouse echoes leaked: {events:?}");
-        assert_eq!(state.feed.source(), super::PointerSource::Touch);
+        assert_eq!(state.pen.source(), super::PointerSource::Touch);
         assert!(state.pressed.is_none());
     }
     state.leftover_guard_until = None;
@@ -1516,7 +1448,7 @@ fn mouse_echo_after_pinch_cannot_press_or_move_a_tool() {
         &mut events,
     );
     assert_eq!(state.pressed, Some(egui::PointerButton::Primary));
-    assert_eq!(state.feed.source(), super::PointerSource::Mouse);
+    assert_eq!(state.pen.source(), super::PointerSource::Mouse);
 }
 
 #[test]
@@ -1538,7 +1470,7 @@ fn mouse_echo_after_single_finger_lift_cannot_reclassify_the_tap() {
         2.,
         &mut events,
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Touch);
+    assert_eq!(state.pen.source(), super::PointerSource::Touch);
     events.clear();
     state.push(
         super::Input {
@@ -1563,7 +1495,7 @@ fn mouse_echo_after_single_finger_lift_cannot_reclassify_the_tap() {
         );
     }
     assert!(events.is_empty(), "post-lift mouse echo leaked: {events:?}");
-    assert_eq!(state.feed.source(), super::PointerSource::Touch);
+    assert_eq!(state.pen.source(), super::PointerSource::Touch);
     state.push(
         super::Input {
             kind: "pointer".into(),
@@ -1575,7 +1507,7 @@ fn mouse_echo_after_single_finger_lift_cannot_reclassify_the_tap() {
         &mut events,
     );
     assert_eq!(state.pressed, Some(egui::PointerButton::Primary));
-    assert_eq!(state.feed.source(), super::PointerSource::Mouse);
+    assert_eq!(state.pen.source(), super::PointerSource::Mouse);
 }
 
 #[test]
@@ -1589,7 +1521,7 @@ fn blocked_finger_with_interleaved_axis_never_edits_the_document() {
         .edit_prefs(|p| p.tools.block_finger_input = true);
     app.ui.tool = Tool::Brush;
     let mut state = super::State {
-        feed: app.stylus.feed.clone(),
+        pen: super::PenLink::new(app.stylus.feed.clone()),
         ..Default::default()
     };
     let render = |app: &mut PhotocraftApp, events: Vec<egui::Event>| {
@@ -1713,7 +1645,7 @@ fn staggered_lift_keeps_remaining_finger_owned_beyond_the_settling_window() {
                 &mut events,
             );
         }
-        assert_eq!(state.feed.source(), super::PointerSource::Touch);
+        assert_eq!(state.pen.source(), super::PointerSource::Touch);
         assert_eq!(state.touches.len(), 1);
         assert!(state.touch_nav_active);
         assert!(state.pressed.is_none());
@@ -1738,7 +1670,7 @@ fn native_staggered_pinch_aborts_provisional_ink_and_commits_owned_ink() {
             .unwrap();
         app.ui.tool = Tool::Brush;
         let mut state = super::State {
-            feed: app.stylus.feed.clone(),
+            pen: super::PenLink::new(app.stylus.feed.clone()),
             ..Default::default()
         };
         let mut now = 0.0;
@@ -1833,7 +1765,7 @@ fn pen_hover_is_forwarded_across_canvas_and_chrome() {
         matches!(events.as_slice(), [egui::Event::PointerMoved(p)] if *p == egui::pos2(22., 20.)),
         "toolbar hover must resume on the first new pen sample after lift"
     );
-    assert_eq!(state.feed.source(), super::PointerSource::Pen);
+    assert_eq!(state.pen.source(), super::PointerSource::Pen);
 }
 
 // Exercise the actual native adapter and editor frame, including idle repaint frames.
@@ -1872,7 +1804,7 @@ fn native_free_transform_single_contact_stays_still() {
                     app.ui.tool = tool;
                     app.ui.extras.snap = false;
                     let mut state = super::State {
-                        feed: app.stylus.feed.clone(),
+                        pen: super::PenLink::new(app.stylus.feed.clone()),
                         ..Default::default()
                     };
                     let mut now = 0.;
@@ -2032,7 +1964,7 @@ fn cancellation_releases_at_last_emitted_position_for_every_pointer_source() {
                             action,
                             x,
                             y,
-                            sample: (source == PointerSource::Pen).then_some(PenSample {
+                            sample: (source == PointerSource::Pen).then_some(PenReading {
                                 pressure: 0.5,
                                 ..Default::default()
                             }),

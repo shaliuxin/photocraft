@@ -37,8 +37,10 @@ const factoryPackets = [
   protocol.StylusPacket.action(protocol.StylusAction.Squeeze, 2000),
   protocol.StylusPacket.pointer(protocol.StylusPointerSource.Touch, null)
 ];
+// The fixture lives with the host adapter: `native/rust/src/stylus.rs` parses it, so the
+// ArkTS factories and the Rust consumer are checked against the same file.
 const fixture = JSON.parse(fs.readFileSync(path.join(root,
-  'upstream/photocraft/crates/ui-egui/tests/fixtures/stylus-packets.json'), 'utf8'));
+  'native/rust/tests/fixtures/stylus-packets.json'), 'utf8'));
 assert.deepEqual(plain(factoryPackets), fixture, 'ArkTS factories must match the Rust protocol fixture');
 
 function setup(failedGesture) {

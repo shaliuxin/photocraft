@@ -176,10 +176,15 @@ fn canvas_type_session_opens_ime_and_accepts_composition_and_unicode_deletion() 
     let rect = egui::Rect::from_min_size(egui::pos2(20., 30.), egui::vec2(1., 24.));
     let mut output = egui::PlatformOutput::default();
     output.ime = Some(egui::output::IMEOutput {
+        owner: egui::Id::new("test-type"),
+        context_generation: 0,
+        purpose: egui::IMEPurpose::Normal,
         rect,
         cursor_rect: rect,
-        purpose: egui::IMEPurpose::Normal,
         should_interrupt_composition: false,
+        reset_request: None,
+        change_cause: egui::ImeChangeCause::Other,
+        surrounding_text: egui::output::IMESurroundingText::default(),
     });
     let mut sync = ImeSync::default();
     sync.update(&ctx, &output, Some(&app));

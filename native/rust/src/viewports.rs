@@ -185,8 +185,7 @@ impl Registry {
                     size_px: (width, height),
                     input: {
                         let mut state = input::State::default();
-                        state.feed = self.feed.clone();
-                        state.viewport = id;
+                        state.pen = crate::stylus::PenLink::new(self.feed.clone());
                         state
                     },
                     events: Vec::new(),
