@@ -1,8 +1,10 @@
-//! Optional window full screen: the egui status-bar button and Window menu item ask ArkTS to
-//! enter / leave HarmonyOS full screen, and ArkTS reports the real state back (including when the
-//! system leaves full screen by itself), so icon and menu text always match the window.
+//! Optional window full screen: View › Screen Mode (and the `window.fullscreen.toggle` control
+//! command) asks ArkTS to enter / leave HarmonyOS full screen, and ArkTS reports the real state
+//! back (including when the system leaves full screen by itself), so the chrome and the menu always
+//! match the window.
 //!
-//! Default is off. The state is only a mirror of the host window; it is never changed optimistically.
+//! Default is off. The host window is the only truth: asking changes nothing until ArkTS reports
+//! back, and every report (including a refusal) is written into the app's Screen Mode.
 
 use photocraft_ui_egui::window_fullscreen::WindowFullscreen;
 use std::sync::{
