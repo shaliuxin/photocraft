@@ -217,6 +217,59 @@ index 3ef2ab1..1acd155 100644
  #[test]
  fn full_screen_and_maximized_never_overlap_on_windows() {
      use egui::ViewportCommand::{Fullscreen, Maximized};
+diff --git a/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs b/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
+index 6586b98..a4d2a44 100644
+--- a/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
++++ b/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
+@@ -13,6 +13,10 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+     let system = system_title_bar(app);
+     // The caption buttons' room at each end (`titlebar`); a side with buttons has no margin.
+     let (caption_left, caption_right) = crate::titlebar::reserved(app, ui.ctx());
++    // A host that owns the window (HarmonyOS) draws its own caption buttons over this bar and
++    // reports their extent through `host_titlebar`; reserve the same room the app-drawn buttons
++    // would take, so the far-end controls never slide underneath them.
++    let caption_right = caption_right.max(app.host_titlebar.x);
+     let left = if cfg!(target_os = "macos") && app.integrated_titlebar {
+         78
+     } else if caption_left > 0.0 {
+diff --git a/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs b/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
+index 7cb98ae..7a59dd3 100644
+--- a/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
++++ b/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
+@@ -145,6 +145,33 @@ fn caption_buttons_take_the_right_end_and_nothing_overlaps_them() {
+     }
+ }
+ 
++/// A host that owns the window (HarmonyOS) draws its own caption buttons over this bar and
++/// reports their extent through `host_titlebar`: the far-end controls must keep clear of that
++/// rect, the same way the app-drawn caption buttons reserve their end.
++#[test]
++fn host_caption_buttons_reserve_the_right_end_of_the_bar() {
++    for width in [760.0, 1100.0] {
++        let mut w = Win::new(width);
++        w.app.custom_titlebar = false;
++        w.app.host_titlebar = egui::vec2(120.0, 38.0);
++        w.frame(vec![]);
++        w.frame(vec![]);
++        let widgets = w.bar_widgets();
++        assert!(widgets.len() >= 10, "menus, search, theme, workspace: {widgets:?}");
++        for a in &widgets {
++            assert!(a.right() <= width - 120.0, "{a:?} runs under the host's caption buttons at {width}");
++        }
++    }
++    // No clearance reported: the bar keeps its normal margin instead of an empty right end.
++    let mut w = Win::new(1100.0);
++    w.app.custom_titlebar = false;
++    w.frame(vec![]);
++    w.frame(vec![]);
++    for a in w.bar_widgets() {
++        assert!(a.right() <= 1100.0 - 10.0, "{a:?} runs into the bar's own margin");
++    }
++}
++
+ #[test]
+ fn the_title_bar_promotes_no_community_chat() {
+     // Issue #1726: only the always-visible title-bar button is removed. The start-screen
 diff --git a/upstream/photocraft/crates/ui-egui/src/path_pick.rs b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
 new file mode 100644
 index 0000000..978f019

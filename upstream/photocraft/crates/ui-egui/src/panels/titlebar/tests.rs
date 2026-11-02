@@ -145,6 +145,33 @@ fn caption_buttons_take_the_right_end_and_nothing_overlaps_them() {
     }
 }
 
+/// A host that owns the window (HarmonyOS) draws its own caption buttons over this bar and
+/// reports their extent through `host_titlebar`: the far-end controls must keep clear of that
+/// rect, the same way the app-drawn caption buttons reserve their end.
+#[test]
+fn host_caption_buttons_reserve_the_right_end_of_the_bar() {
+    for width in [760.0, 1100.0] {
+        let mut w = Win::new(width);
+        w.app.custom_titlebar = false;
+        w.app.host_titlebar = egui::vec2(120.0, 38.0);
+        w.frame(vec![]);
+        w.frame(vec![]);
+        let widgets = w.bar_widgets();
+        assert!(widgets.len() >= 10, "menus, search, theme, workspace: {widgets:?}");
+        for a in &widgets {
+            assert!(a.right() <= width - 120.0, "{a:?} runs under the host's caption buttons at {width}");
+        }
+    }
+    // No clearance reported: the bar keeps its normal margin instead of an empty right end.
+    let mut w = Win::new(1100.0);
+    w.app.custom_titlebar = false;
+    w.frame(vec![]);
+    w.frame(vec![]);
+    for a in w.bar_widgets() {
+        assert!(a.right() <= 1100.0 - 10.0, "{a:?} runs into the bar's own margin");
+    }
+}
+
 #[test]
 fn the_title_bar_promotes_no_community_chat() {
     // Issue #1726: only the always-visible title-bar button is removed. The start-screen

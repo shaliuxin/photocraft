@@ -13,6 +13,10 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let system = system_title_bar(app);
     // The caption buttons' room at each end (`titlebar`); a side with buttons has no margin.
     let (caption_left, caption_right) = crate::titlebar::reserved(app, ui.ctx());
+    // A host that owns the window (HarmonyOS) draws its own caption buttons over this bar and
+    // reports their extent through `host_titlebar`; reserve the same room the app-drawn buttons
+    // would take, so the far-end controls never slide underneath them.
+    let caption_right = caption_right.max(app.host_titlebar.x);
     let left = if cfg!(target_os = "macos") && app.integrated_titlebar {
         78
     } else if caption_left > 0.0 {
