@@ -130,6 +130,12 @@ impl ThemeKind {
     pub fn is_light(self) -> bool {
         !self.is_dark()
     }
+    /// `#RRGGBB` of the window chrome (title bar and status bar). A host uses it to colour the
+    /// system status bar and navigation indicator so they meet the app edge.
+    pub fn chrome_css(self) -> String {
+        let c = Tokens::for_kind(self).chrome;
+        format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
+    }
     pub fn next(self) -> Self {
         let i = Self::ALL.iter().position(|k| *k == self).unwrap_or(0);
         Self::ALL[(i + 1) % Self::ALL.len()]

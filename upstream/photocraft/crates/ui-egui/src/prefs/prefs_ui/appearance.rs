@@ -46,6 +46,10 @@ pub(super) fn selected_theme(interface: &prefs::Interface, system: Option<egui::
             LightTheme::Adwaita => ThemeKind::Adwaita,
             LightTheme::BreezeLight => ThemeKind::BreezeLight,
             LightTheme::SoftLight => ThemeKind::SoftLight,
+            // The ArkUI themes take their own ThemeKind once the theme layer is ported
+            // (fork theme.rs: colour sets matching the system's); until then they fall
+            // back to the closest built-in look.
+            LightTheme::ArkuiLight | LightTheme::ArkuiProLight => ThemeKind::ProLight,
         }
     } else {
         match interface.dark_theme {
@@ -56,6 +60,7 @@ pub(super) fn selected_theme(interface: &prefs::Interface, system: Option<egui::
             DarkTheme::AdwaitaDark => ThemeKind::AdwaitaDark,
             DarkTheme::BreezeDark => ThemeKind::BreezeDark,
             DarkTheme::SoftDark => ThemeKind::SoftDark,
+            DarkTheme::ArkuiDark | DarkTheme::ArkuiProDark => ThemeKind::Pro,
         }
     }
 }

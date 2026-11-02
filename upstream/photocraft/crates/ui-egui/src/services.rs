@@ -184,6 +184,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
 /// Encode a document: (file bytes, warnings about anything approximated or dropped).
 pub type ExportFn = Box<dyn Fn(&Document, &str, &ExportSettings) -> Result<(Vec<u8>, Vec<String>), String>>;
 
+/// File › Open / Open As: returns (name, bytes) of the picked file. Sandboxed hosts show the
+/// system document picker; the picker itself stays asynchronous on their side of the bridge.
+pub type PickOpenFn = Box<dyn FnMut() -> Option<(String, Result<Vec<u8>, String>)>>;
+/// File › Open's multi-file picker; returns the selected paths.
+pub type PickOpenPathsFn = Box<dyn FnMut() -> Option<Vec<String>>>;
+/// Show a "save file" dialog; returns a path/name to write.
+pub type PickSaveFn = Box<dyn FnMut(&str) -> Option<String>>;
+/// Folder picker for synchronous hosts; without one, a folder request on such a host is cancelled.
+/// `true` asks for an output folder, `false` an input one.
+pub type PickFolderFn = Box<dyn FnMut(bool) -> Option<Result<String, String>>>;
+/// Optional host policy for ordinary Save: returns the path to write. Save As still uses the picker.
+pub type DefaultSaveFn = Box<dyn FnMut(&Document, Option<&str>) -> Result<String, String>>;
+
 pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
 
 /// What a file on disk looked like when a document last read or wrote it: File › Save asks
@@ -325,6 +338,38 @@ pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
 pub struct Services {
     /// User-initiated desktop/browser pixel sampling.
     pub screen_pick: Option<screen_picker::Service>,
+    /// Optional host full screen (HarmonyOS system bars); `None` elsewhere (window_fullscreen).
+    pub window_fullscreen: Option<crate::window_fullscreen::WindowFullscreen>,
+    /// File › Open / Open As: document picker. On HarmonyOS this shows the files-vs-gallery
+    /// source chooser before the system picker.
+    pub pick_open: Option<PickOpenFn>,
+    /// Import one file into an existing flow (notes, presets, scripts, plug-ins, LUTs, …).
+    /// When set, [`crate::PhotocraftApp::pick_file_bytes`] uses this instead of
+    /// [`Self::pick_open`], so sandboxed hosts can skip the document-open source chooser and go
+    /// straight to the file manager. Absent on desktop (everything shares `pick_open`).
+    pub pick_import: Option<PickOpenFn>,
+    /// Show File › Open's multi-file picker; returns the selected paths.
+    pub pick_open_paths: Option<PickOpenPathsFn>,
+    /// Show a "save file" dialog; returns a path/name to write.
+    pub pick_save: Option<PickSaveFn>,
+    /// Folder picker for synchronous hosts (see [`PickFolderFn`]).
+    pub pick_folder: Option<PickFolderFn>,
+    /// Sandboxed hosts (HarmonyOS): path fields are read-only and filled only through the system
+    /// pickers (a "Choose…" button beside each field); typing a path is not allowed.
+    pub path_pickers_only: bool,
+    /// The host's private, writable application directory. Files picked for path fields are
+    /// copied under it (`imports/`, `plugins/`, `icc/`), since a sandboxed app has no paths to
+    /// the user's files.
+    pub sandbox_dir: Option<String>,
+    /// System-visible application document folder (HarmonyOS `DocumentPickerMode.DOWNLOAD`,
+    /// i.e. `~/Downloads/<bundle>`). Batch/export defaults write under subfolders here
+    /// (`processed`, `exports`, …). Absent on desktop hosts.
+    pub documents_dir: Option<String>,
+    /// Always choose a target, even for Save of a named document. Hosts with opaque storage URIs
+    /// use the picker to associate the display name with write authority.
+    pub always_pick_save: bool,
+    /// Optional host policy for ordinary Save. Save As still uses the picker.
+    pub default_save: Option<DefaultSaveFn>,
     /// Decode a file's bytes into a document (PSD, PNG, JPEG, …).
     pub import: Option<ImportFn>,
     /// Encode a document for a file name (format chosen by extension).

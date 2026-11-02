@@ -91,6 +91,8 @@ impl PhotocraftApp {
             styled: false,
             integrated_titlebar: false,
             custom_titlebar: false,
+            host_titlebar: egui::Vec2::ZERO,
+            native_doc_windows: false,
             last_window_title: String::new(),
             fonts_ready: false,
             last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),

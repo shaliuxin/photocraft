@@ -13,6 +13,10 @@ use crate::PhotocraftApp;
 use crate::state::{Tool, View};
 
 pub(super) mod ants;
+/// Prefix of the texture names the canvas itself loads into egui's manager (the host skips
+/// these when sweeping textures, e.g. to free the 2in1 window snapshots it owns).
+pub const DISPLAY_TEXTURE_PREFIX: &str = "photocraft-display:";
+
 pub mod artboard_ui;
 pub(crate) mod background_redraw;
 pub(crate) mod cam_preview;

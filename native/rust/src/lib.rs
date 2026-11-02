@@ -561,13 +561,19 @@ fn worker(config: Config, rx: mpsc::Receiver<Message>) {
     // Native file opens and drag imports must decode off the render worker so the
     // editor keeps drawing the opening tab and its progress indicator.
     app.background_jobs = true;
-    app.session.print_service = Some(|pdf, metadata| {
-        bridge::request("print", &metadata.to_string(), pdf).map(|(message, _)| message)
+    // 0.18 prints through Session::print_spooler (the sandbox print portal slot): the job
+    // goes to the ArkTS side, which shows the system print sheet.
+    app.session.print_spooler = Some(photocraft_engine::print_cmds::Spooler {
+        name: "harmonyos",
+        preferred: true,
+        run: std::sync::Arc::new(|job| {
+            bridge::request("print", &job.title, &job.pdf).map(|(message, _)| message)
+        }),
     });
     // Scripts, actions and batch commands that name a path outside the sandbox are refused.
     app.session.authorize = Some(sandbox_paths::gate);
-    app.session.print_save_service =
-        Some(|target, pdf| bridge::request("write", target, pdf).map(|_| ()));
+    // (0.16's print_save_service is gone: 0.18 writes print-to-file through format::atomic,
+    // whose host writer the adapter installs below, so the sandbox needs no separate hook.)
 
     // Apply the app's initial style/font configuration before the host registers
     // system fonts. This startup pass has no user input.

@@ -1,0 +1,684 @@
+diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
+index 887f77f..f973295 100644
+--- a/upstream/photocraft/crates/ui-egui/src/app.rs
++++ b/upstream/photocraft/crates/ui-egui/src/app.rs
+@@ -91,6 +91,8 @@ impl PhotocraftApp {
+             styled: false,
+             integrated_titlebar: false,
+             custom_titlebar: false,
++            host_titlebar: egui::Vec2::ZERO,
++            native_doc_windows: false,
+             last_window_title: String::new(),
+             fonts_ready: false,
+             last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
+diff --git a/upstream/photocraft/crates/ui-egui/src/canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas.rs
+index da59b5a..c001205 100644
+--- a/upstream/photocraft/crates/ui-egui/src/canvas.rs
++++ b/upstream/photocraft/crates/ui-egui/src/canvas.rs
+@@ -13,6 +13,10 @@ use crate::PhotocraftApp;
+ use crate::state::{Tool, View};
+ 
+ pub(super) mod ants;
++/// Prefix of the texture names the canvas itself loads into egui's manager (the host skips
++/// these when sweeping textures, e.g. to free the 2in1 window snapshots it owns).
++pub const DISPLAY_TEXTURE_PREFIX: &str = "photocraft-display:";
++
+ pub mod artboard_ui;
+ pub(crate) mod background_redraw;
+ pub(crate) mod cam_preview;
+diff --git a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
+index b90a6bf..d779b51 100644
+--- a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
++++ b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
+@@ -100,6 +100,14 @@ pub(crate) struct Pending {
+ 
+ /// The error of a cancelled dialog: not reported, since backing out is the user's choice.
+ pub(crate) const CANCELLED: &str = "cancelled";
++thread_local! {
++    /// The next folder request is for output (see [`PhotocraftApp::ask_output_folder`]).
++    static FOLDER_FOR_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++    /// The next single-file open may be a photo (Place, Replace Contents): keep `pick_open`
++    /// (files-vs-gallery chooser on HarmonyOS) instead of `pick_import`.
++    static OPEN_ALLOWS_GALLERY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
+ const UNEXPECTED: &str = "the file dialog gave an unexpected answer";
+ 
+ impl PhotocraftApp {
+@@ -117,7 +125,38 @@ impl PhotocraftApp {
+         then: impl FnOnce(&mut Self, FileDialogAnswer) -> Result<Value, String> + 'static,
+     ) -> Result<Value, String> {
+         if self.services.file_dialog.is_none() {
+-            return Err(CANCELLED.into());
++            // Existing synchronous hosts (HarmonyOS) select capability-bearing targets at once.
++            let answer = match &request {
++                FileDialogRequest::Save { suggested } => self.services.pick_save.as_mut().and_then(|pick| pick(suggested)).map(FileDialogAnswer::SaveTo),
++                FileDialogRequest::Open { multiple: true, .. } if self.services.pick_open_paths.is_some() => {
++                    self.services.pick_open_paths.as_mut().and_then(|pick| pick()).map(FileDialogAnswer::Paths)
++                }
++                // Single-file imports (notes, presets, scripts, path_pick staging, …) prefer
++                // `pick_import` so HarmonyOS can open the file manager without the document
++                // "from where" source chooser that File › Open uses.
++                FileDialogRequest::Open { multiple: false, .. }
++                    if self.services.pick_import.is_some() && !OPEN_ALLOWS_GALLERY.with(|g| g.replace(false)) =>
++                {
++                    match self.services.pick_import.as_mut().and_then(|pick| pick()) {
++                        Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
++                        None => None,
++                    }
++                }
++                FileDialogRequest::Open { .. } => match self.services.pick_open.as_mut().and_then(|pick| pick()) {
++                    Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
++                    None => None,
++                },
++                // Sync hosts answer folders through `pick_folder` (HarmonyOS); without one, cancel.
++                FileDialogRequest::Folder { .. } => {
++                    let output = FOLDER_FOR_OUTPUT.with(|o| o.replace(false));
++                    match self.services.pick_folder.as_mut().and_then(|pick| pick(output)) {
++                        Some(Ok(path)) => Some(FileDialogAnswer::FolderTo(path)),
++                        Some(Err(why)) => return Err(why),
++                        None => None,
++                    }
++                }
++            };
++            return then(self, answer.ok_or(CANCELLED)?);
+         }
+         if self.file_dialog.is_some() {
+             return Err("a file dialog is already open".into());
+@@ -146,6 +185,16 @@ impl PhotocraftApp {
+         })
+     }
+ 
++    /// [`Self::ask_folder`] for a folder the command writes into (an export or batch output).
++    /// Synchronous hosts' [`crate::Services::pick_folder`] is told so: a device without a folder
++    /// picker can offer its own writable folder for output, but not for input.
++    pub(crate) fn ask_output_folder(&mut self, then: impl FnOnce(&mut Self, String) -> Result<Value, String> + 'static) -> Result<Value, String> {
++        FOLDER_FOR_OUTPUT.with(|o| o.set(true));
++        let r = self.ask_folder(then);
++        FOLDER_FOR_OUTPUT.with(|o| o.set(false));
++        r
++    }
++
+     /// Ask where to save: `then` gets the chosen path, with a lowercase extension when
+     /// Preferences ▸ File Handling › Lowercase Extension is on (its default). When that, or the
+     /// extension added to a bare name, changes the path to one where a file exists, the app asks
+diff --git a/upstream/photocraft/crates/ui-egui/src/file_open.rs b/upstream/photocraft/crates/ui-egui/src/file_open.rs
+index 65c1fb5..3b1860b 100644
+--- a/upstream/photocraft/crates/ui-egui/src/file_open.rs
++++ b/upstream/photocraft/crates/ui-egui/src/file_open.rs
+@@ -268,7 +268,7 @@ impl PhotocraftApp {
+     }
+ 
+     /// Where a drop at `at` lands. Over a window or dialog it's neither the canvas nor the tabs.
+-    pub(crate) fn drop_target(&self, ctx: &egui::Context, at: Option<egui::Pos2>) -> DropTarget {
++    pub fn drop_target(&self, ctx: &egui::Context, at: Option<egui::Pos2>) -> DropTarget {
+         let Some(p) = at.filter(|p| ctx.layer_id_at(*p).is_none_or(|l| l.order == egui::Order::Background)) else {
+             return DropTarget::Elsewhere;
+         };
+diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
+index 946bf4a..1c49e7b 100644
+--- a/upstream/photocraft/crates/ui-egui/src/lib.rs
++++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
+@@ -25,6 +25,8 @@ macro_rules! tl {
+ mod brush_mode_menu;
+ pub mod canvas;
+ pub mod control;
++pub mod path_pick;
++pub mod window_fullscreen;
+ pub mod dialogs;
+ pub mod dock;
+ pub mod file_dialog;
+@@ -445,6 +447,12 @@ pub struct PhotocraftApp {
+     /// Windows and Linux: the window has no OS decorations and the app's top bar is the title bar
+     /// (caption buttons, window dragging and edge resizing, `titlebar`).
+     pub custom_titlebar: bool,
++    /// A wrapping host's window chrome: (left, width) of the drag area the titlebar draws into,
++    /// so clicks inside it stay out of the canvas. Zero without a host titlebar.
++    pub host_titlebar: egui::Vec2,
++    /// Whether the host opens documents in its own windows (the 2in1 multi-window mode); the
++    /// web's window.open document flow and the desktop's separate windows are not used then.
++    pub native_doc_windows: bool,
+     /// Last window title sent to the OS (`ViewportCommand::Title`, see `panels::sync_window_title`):
+     /// sent again only when it changes, so idle frames don't spam the backend.
+     last_window_title: String,
+diff --git a/upstream/photocraft/crates/ui-egui/src/path_pick.rs b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
+new file mode 100644
+index 0000000..f39c831
+--- /dev/null
++++ b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
+@@ -0,0 +1,339 @@
++//! Path fields on sandboxed hosts (HarmonyOS).
++//!
++//! A sandboxed app cannot read or write the user's files by path, so a typed path is useless
++//! there. When the host sets [`crate::Services::path_pickers_only`], every field that takes a
++//! file or folder path is drawn read-only, with a "Choose…" button beside it that opens the
++//! system file manager. The answer fills the field:
++//!
++//! - a file the command reads is copied into the host's sandbox ([`crate::Services::sandbox_dir`],
++//!   under `imports/`, `plugins/` or `icc/`) and the field names that copy;
++//! - a folder is whatever path the host's folder picker answered (a folder the system granted
++//!   the app, or one of the app's own folders).
++//!
++//! Other hosts keep the ordinary text field: [`locked_field`] draws nothing and returns `false`.
++//!
++//! The button only records a [`Request`] in egui memory; [`crate::dialogs::show`] starts it once
++//! the dialog's fields are written back, so a picker answered within the frame (synchronous
++//! hosts) isn't overwritten by the frame's copy of the fields.
++
++use std::path::{Path, PathBuf};
++
++use serde_json::{Map, Value, json};
++
++use crate::PhotocraftApp;
++
++/// What a path field takes.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub enum PickKind {
++    /// A file the command reads (any extension when `extensions` is empty). Sandboxed hosts copy
++    /// it under `stage`.
++    File { extensions: Vec<String>, stage: Stage },
++    /// A folder the command reads from.
++    InputFolder,
++    /// A folder the command writes into.
++    OutputFolder,
++    /// A file the command writes: its folder is chosen, the field's file name (else
++    /// `default_name`) is kept.
++    OutputFile { default_name: String },
++    /// A folder of `*.wasm` plug-ins. Sandboxed hosts copy the plug-ins into `plugins/` and the
++    /// field names that folder, so they still load after the folder grant has lapsed.
++    PluginFolder,
++}
++
++/// Where a picked file is copied in the sandbox.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub enum Stage {
++    Imports,
++    Plugins,
++    Profiles,
++}
++
++impl Stage {
++    pub fn folder(self) -> &'static str {
++        match self {
++            Stage::Imports => "imports",
++            Stage::Plugins => "plugins",
++            Stage::Profiles => "icc",
++        }
++    }
++}
++
++/// A "Choose…" click: the dialog field (a JSON pointer into the dialog's fields) to fill.
++#[derive(Clone, Debug, PartialEq, Eq)]
++pub struct Request {
++    pub pointer: String,
++    pub kind: PickKind,
++}
++
++fn only_id() -> egui::Id {
++    egui::Id::new("photocraft-path-pickers-only")
++}
++
++fn request_id() -> egui::Id {
++    egui::Id::new("photocraft-path-pick-request")
++}
++
++/// Record, for this frame's widgets, whether path fields are picker-only.
++pub fn publish(ctx: &egui::Context, on: bool) {
++    ctx.data_mut(|d| d.insert_temp(only_id(), on));
++}
++
++/// Whether path fields are picker-only (see [`publish`]).
++pub fn pickers_only(ctx: &egui::Context) -> bool {
++    ctx.data(|d| d.get_temp::<bool>(only_id())).unwrap_or(false)
++}
++
++/// Ask for a picker for the field at `pointer` (started after the dialog is drawn).
++pub fn request(ctx: &egui::Context, pointer: &str, kind: PickKind) {
++    ctx.data_mut(|d| d.insert_temp(request_id(), Request { pointer: pointer.to_string(), kind }));
++}
++
++/// The request recorded this frame, if any.
++pub fn take_request(ctx: &egui::Context) -> Option<Request> {
++    ctx.data_mut(|d| {
++        let r = d.get_temp::<Request>(request_id());
++        d.remove::<Request>(request_id());
++        r
++    })
++}
++
++/// The "Choose…" button's label.
++pub fn choose_label() -> &'static str {
++    tl!("Choose…")
++}
++
++/// Draws the picker-only version of a path field (a disabled field showing `value`, then a
++/// "Choose…" button) and returns `true`, when path fields are picker-only and `kind` is a path
++/// field. Otherwise draws nothing and returns `false`: the caller draws its ordinary field.
++pub fn locked_field(ui: &mut egui::Ui, kind: Option<PickKind>, pointer: &str, value: &str, width: f32) -> bool {
++    let Some(kind) = kind.filter(|_| pickers_only(ui.ctx())) else { return false };
++    ui.horizontal(|ui| {
++        let mut shown = value.to_string();
++        ui.add_enabled(false, egui::TextEdit::singleline(&mut shown).desired_width((width - 70.0).max(80.0))).on_disabled_hover_text(value);
++        if crate::widgets::secondary_button(ui, choose_label(), 64.0).clicked() {
++            request(ui.ctx(), pointer, kind);
++        }
++    });
++    true
++}
++
++const IMAGE_EXTENSIONS: &[&str] = &["psd", "psb", "png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp", "gif"];
++
++fn file(extensions: &[&str], stage: Stage) -> Option<PickKind> {
++    Some(PickKind::File { extensions: extensions.iter().map(|e| (*e).to_string()).collect(), stage })
++}
++
++/// The path field `key` of `command`'s dialog (`"prefs"` with a dotted preference path for
++/// Preferences), or `None` when it isn't a path.
++pub fn kind_for(command: &str, key: &str) -> Option<PickKind> {
++    match (command, key) {
++        ("plugin.install", "path") => file(&["wasm"], Stage::Plugins),
++        ("plugin.reload", "path") | ("prefs", "plugIns.additionalPluginsFolder") => Some(PickKind::PluginFolder),
++        ("prefs", "historyLog.filePath") => Some(PickKind::OutputFile { default_name: "PhotoCraft History Log.txt".into() }),
++        ("filter.distort.displace", "mapPath") => file(&["psd", "psb"], Stage::Imports),
++        (c, "file") if c.ends_with(".colorLookup") => file(&["cube", "3dl", "look"], Stage::Imports),
++        ("image.variables", "pixelReplacement") => file(IMAGE_EXTENSIONS, Stage::Imports),
++        // Input folders (batch / photography / contact sheet).
++        (
++            "file.automate.batch"
++                | "file.scripts.imageProcessor"
++                | "file.automate.lensCorrection"
++                | "file.automate.contactSheetII",
++            "input",
++        ) => Some(PickKind::InputFolder),
++        ("file.automate.photomerge" | "file.automate.mergeToHdrPro", "paths") => Some(PickKind::InputFolder),
++        // Output folders (batch / export / package / droplet).
++        (
++            "file.automate.batch"
++                | "file.scripts.imageProcessor"
++                | "file.automate.lensCorrection"
++                | "file.automate.createDroplet",
++            "output",
++        ) => Some(PickKind::OutputFolder),
++        (
++            "file.export.layersToFiles"
++                | "file.export.layerCompsToFiles"
++                | "file.export.artboardsToFiles"
++                | "file.export.dataSetsAsFiles"
++                | "file.package",
++            "dir",
++        ) => Some(PickKind::OutputFolder),
++        // Output files kept under a chosen folder.
++        ("file.export.artboardsToPdf", "path") => Some(PickKind::OutputFile { default_name: "Artboards.pdf".into() }),
++        ("file.export.colorLookupTables", "path") => Some(PickKind::OutputFile { default_name: "Color Lookup.cube".into() }),
++        ("file.export.pathsToIllustrator", "path") => Some(PickKind::OutputFile { default_name: "Paths.ai".into() }),
++        ("file.automate.createDroplet", "path") => Some(PickKind::OutputFile { default_name: "Action.pcdroplet".into() }),
++        _ => None,
++    }
++}
++
++/// Standard subfolders under the app's DOWNLOAD document directory (`~/Downloads/<bundle>`).
++pub const OUTPUT_SUBDIRS: &[&str] = &["processed", "batch", "corrected", "exports", "droplet-output", "package"];
++
++/// The host's system-visible document folder (HarmonyOS DOWNLOAD), when set.
++pub fn documents_root(app: &PhotocraftApp) -> Option<&str> {
++    app.services.documents_dir.as_deref().filter(|s| !s.is_empty())
++}
++
++/// Ensures `documents_dir/<sub>` exists and returns it. Falls back to the active document's
++/// folder (desktop) or `"."` when the host has no document directory.
++pub fn documents_output_dir(app: &PhotocraftApp, sub: &str) -> String {
++    let root = documents_root(app).map(str::to_string).unwrap_or_else(|| {
++        app.session
++            .active()
++            .and_then(|d| d.path.as_deref())
++            .and_then(|p| p.rfind(['/', '\\']).map(|i| p[..i].to_string()))
++            .unwrap_or_else(|| ".".into())
++    });
++    if sub.is_empty() {
++        return root;
++    }
++    let dir = Path::new(&root).join(sub);
++    if let Err(e) = std::fs::create_dir_all(&dir) {
++        // Still return the intended path so the field shows where output should go.
++        let _ = e;
++    }
++    dir.to_string_lossy().into_owned()
++}
++
++/// Creates every [`OUTPUT_SUBDIRS`] entry under `root` (startup on HarmonyOS).
++pub fn ensure_output_subdirs(root: &Path) {
++    for sub in OUTPUT_SUBDIRS {
++        let _ = std::fs::create_dir_all(root.join(sub));
++    }
++}
++
++/// A picked file's name reduced to a safe file name (no folders, no control characters).
++pub fn safe_name(name: &str) -> String {
++    let base = name.rsplit(['/', '\\']).next().unwrap_or("").trim();
++    let clean: String = base.chars().map(|c| if c.is_control() || matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c }).collect();
++    if clean.is_empty() || clean == "." || clean == ".." { "file".into() } else { clean }
++}
++
++/// The sandbox folder for `stage` under `sandbox`, created if missing.
++pub fn stage_dir(sandbox: &Path, stage: Stage) -> Result<PathBuf, String> {
++    let dir = sandbox.join(stage.folder());
++    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
++    Ok(dir)
++}
++
++/// Copies a picked file's bytes into the sandbox; the copy's path.
++pub fn stage_bytes(sandbox: &Path, stage: Stage, name: &str, bytes: &[u8]) -> Result<String, String> {
++    let path = stage_dir(sandbox, stage)?.join(safe_name(name));
++    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
++    Ok(path.to_string_lossy().into_owned())
++}
++
++/// Copies the `*.wasm` files of `from` into the sandbox's `plugins/`; that folder's path.
++pub fn stage_plugins(sandbox: &Path, from: &Path) -> Result<String, String> {
++    let dir = stage_dir(sandbox, Stage::Plugins)?;
++    if from == dir {
++        return Ok(dir.to_string_lossy().into_owned());
++    }
++    let entries = std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?;
++    let mut copied = 0;
++    for e in entries.flatten() {
++        let p = e.path();
++        if p.is_file() && p.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("wasm")) {
++            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
++            std::fs::copy(&p, dir.join(safe_name(&name))).map_err(|e| format!("{}: {e}", p.display()))?;
++            copied += 1;
++        }
++    }
++    if copied == 0 {
++        return Err(format!("{}: no .wasm plug-ins in this folder", from.display()));
++    }
++    Ok(dir.to_string_lossy().into_owned())
++}
++
++/// Sets the dialog field at `pointer` (`/a/b/0/c`), creating the last key of an object.
++pub fn set_pointer(fields: &mut Map<String, Value>, pointer: &str, value: Value) -> Result<(), String> {
++    let mut root = Value::Object(std::mem::take(fields));
++    let result = (|| {
++        let (parent, last) = pointer.rsplit_once('/').ok_or("bad field pointer")?;
++        let last = last.replace("~1", "/").replace("~0", "~");
++        let slot = if parent.is_empty() { Some(&mut root) } else { root.pointer_mut(parent) };
++        match slot {
++            Some(Value::Object(o)) => {
++                o.insert(last, value);
++                Ok(())
++            }
++            Some(Value::Array(a)) => {
++                let i: usize = last.parse().map_err(|_| "bad field pointer")?;
++                *a.get_mut(i).ok_or("the field is gone")? = value;
++                Ok(())
++            }
++            _ => Err("the field is gone".to_string()),
++        }
++    })();
++    if let Value::Object(o) = root {
++        *fields = o;
++    }
++    result
++}
++
++fn fill(app: &mut PhotocraftApp, dialog: u64, pointer: &str, value: String) -> Result<Value, String> {
++    let d = app.ui.dialog_mut(dialog).ok_or("the dialog was closed")?;
++    set_pointer(&mut d.fields, pointer, json!(value))?;
++    Ok(Value::Null)
++}
++
++fn sandbox(app: &PhotocraftApp) -> Option<PathBuf> {
++    app.services.sandbox_dir.as_deref().map(PathBuf::from)
++}
++
++/// Shows the picker for `request` on dialog `dialog`; the answer fills the field. Errors (but
++/// not Cancel) go to the status bar.
++pub fn start(app: &mut PhotocraftApp, dialog: u64, request: Request) {
++    let Request { pointer, kind } = request;
++    let current = app
++        .ui
++        .dialogs
++        .iter()
++        .find(|d| d.id == dialog)
++        .and_then(|d| Value::Object(d.fields.clone()).pointer(&pointer).and_then(Value::as_str).map(str::to_string));
++    let result = match kind {
++        PickKind::File { extensions, stage } => {
++            let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
++            app.pick_file_bytes_filtered(&exts, move |app, name, bytes| {
++                let path = match sandbox(app) {
++                    Some(root) => stage_bytes(&root, stage, &name, &bytes)?,
++                    // Desktop: the name is the file's path.
++                    None => name,
++                };
++                if stage == Stage::Profiles {
++                    photocraft_engine::installed_profiles::refresh();
++                }
++                fill(app, dialog, &pointer, path)
++            })
++        }
++        PickKind::InputFolder => app.ask_folder(move |app, path| fill(app, dialog, &pointer, path)),
++        PickKind::OutputFolder => app.ask_output_folder(move |app, path| fill(app, dialog, &pointer, path)),
++        PickKind::OutputFile { default_name } => {
++            let name = current
++                .as_deref()
++                .and_then(|c| Path::new(c).file_name())
++                .map(|n| n.to_string_lossy().into_owned())
++                .filter(|n| !n.is_empty())
++                .unwrap_or(default_name);
++            app.ask_output_folder(move |app, dir| fill(app, dialog, &pointer, Path::new(&dir).join(&name).to_string_lossy().into_owned()))
++        }
++        PickKind::PluginFolder => app.ask_folder(move |app, dir| {
++            let path = match sandbox(app) {
++                Some(root) => stage_plugins(&root, Path::new(&dir))?,
++                None => dir,
++            };
++            fill(app, dialog, &pointer, path)
++        }),
++    };
++    if let Err(e) = result
++        && e != crate::file_dialog::CANCELLED
++    {
++        app.ui.status = e;
++        app.ui.status_error = true;
++    }
++}
++
++#[cfg(test)]
++#[path = "path_pick_tests.rs"]
++mod tests;
+diff --git a/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs b/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
+index 87405f6..ac120c7 100644
+--- a/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
++++ b/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
+@@ -46,6 +46,10 @@ pub(super) fn selected_theme(interface: &prefs::Interface, system: Option<egui::
+             LightTheme::Adwaita => ThemeKind::Adwaita,
+             LightTheme::BreezeLight => ThemeKind::BreezeLight,
+             LightTheme::SoftLight => ThemeKind::SoftLight,
++            // The ArkUI themes take their own ThemeKind once the theme layer is ported
++            // (fork theme.rs: colour sets matching the system's); until then they fall
++            // back to the closest built-in look.
++            LightTheme::ArkuiLight | LightTheme::ArkuiProLight => ThemeKind::ProLight,
+         }
+     } else {
+         match interface.dark_theme {
+@@ -56,6 +60,7 @@ pub(super) fn selected_theme(interface: &prefs::Interface, system: Option<egui::
+             DarkTheme::AdwaitaDark => ThemeKind::AdwaitaDark,
+             DarkTheme::BreezeDark => ThemeKind::BreezeDark,
+             DarkTheme::SoftDark => ThemeKind::SoftDark,
++            DarkTheme::ArkuiDark | DarkTheme::ArkuiProDark => ThemeKind::Pro,
+         }
+     }
+ }
+diff --git a/upstream/photocraft/crates/ui-egui/src/services.rs b/upstream/photocraft/crates/ui-egui/src/services.rs
+index 53d3c2e..551a2b1 100644
+--- a/upstream/photocraft/crates/ui-egui/src/services.rs
++++ b/upstream/photocraft/crates/ui-egui/src/services.rs
+@@ -184,6 +184,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
+ /// Encode a document: (file bytes, warnings about anything approximated or dropped).
+ pub type ExportFn = Box<dyn Fn(&Document, &str, &ExportSettings) -> Result<(Vec<u8>, Vec<String>), String>>;
+ 
++/// File › Open / Open As: returns (name, bytes) of the picked file. Sandboxed hosts show the
++/// system document picker; the picker itself stays asynchronous on their side of the bridge.
++pub type PickOpenFn = Box<dyn FnMut() -> Option<(String, Result<Vec<u8>, String>)>>;
++/// File › Open's multi-file picker; returns the selected paths.
++pub type PickOpenPathsFn = Box<dyn FnMut() -> Option<Vec<String>>>;
++/// Show a "save file" dialog; returns a path/name to write.
++pub type PickSaveFn = Box<dyn FnMut(&str) -> Option<String>>;
++/// Folder picker for synchronous hosts; without one, a folder request on such a host is cancelled.
++/// `true` asks for an output folder, `false` an input one.
++pub type PickFolderFn = Box<dyn FnMut(bool) -> Option<Result<String, String>>>;
++/// Optional host policy for ordinary Save: returns the path to write. Save As still uses the picker.
++pub type DefaultSaveFn = Box<dyn FnMut(&Document, Option<&str>) -> Result<String, String>>;
++
+ pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
+ 
+ /// What a file on disk looked like when a document last read or wrote it: File › Save asks
+@@ -325,6 +338,38 @@ pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
+ pub struct Services {
+     /// User-initiated desktop/browser pixel sampling.
+     pub screen_pick: Option<screen_picker::Service>,
++    /// Optional host full screen (HarmonyOS system bars); `None` elsewhere (window_fullscreen).
++    pub window_fullscreen: Option<crate::window_fullscreen::WindowFullscreen>,
++    /// File › Open / Open As: document picker. On HarmonyOS this shows the files-vs-gallery
++    /// source chooser before the system picker.
++    pub pick_open: Option<PickOpenFn>,
++    /// Import one file into an existing flow (notes, presets, scripts, plug-ins, LUTs, …).
++    /// When set, [`crate::PhotocraftApp::pick_file_bytes`] uses this instead of
++    /// [`Self::pick_open`], so sandboxed hosts can skip the document-open source chooser and go
++    /// straight to the file manager. Absent on desktop (everything shares `pick_open`).
++    pub pick_import: Option<PickOpenFn>,
++    /// Show File › Open's multi-file picker; returns the selected paths.
++    pub pick_open_paths: Option<PickOpenPathsFn>,
++    /// Show a "save file" dialog; returns a path/name to write.
++    pub pick_save: Option<PickSaveFn>,
++    /// Folder picker for synchronous hosts (see [`PickFolderFn`]).
++    pub pick_folder: Option<PickFolderFn>,
++    /// Sandboxed hosts (HarmonyOS): path fields are read-only and filled only through the system
++    /// pickers (a "Choose…" button beside each field); typing a path is not allowed.
++    pub path_pickers_only: bool,
++    /// The host's private, writable application directory. Files picked for path fields are
++    /// copied under it (`imports/`, `plugins/`, `icc/`), since a sandboxed app has no paths to
++    /// the user's files.
++    pub sandbox_dir: Option<String>,
++    /// System-visible application document folder (HarmonyOS `DocumentPickerMode.DOWNLOAD`,
++    /// i.e. `~/Downloads/<bundle>`). Batch/export defaults write under subfolders here
++    /// (`processed`, `exports`, …). Absent on desktop hosts.
++    pub documents_dir: Option<String>,
++    /// Always choose a target, even for Save of a named document. Hosts with opaque storage URIs
++    /// use the picker to associate the display name with write authority.
++    pub always_pick_save: bool,
++    /// Optional host policy for ordinary Save. Save As still uses the picker.
++    pub default_save: Option<DefaultSaveFn>,
+     /// Decode a file's bytes into a document (PSD, PNG, JPEG, …).
+     pub import: Option<ImportFn>,
+     /// Encode a document for a file name (format chosen by extension).
+diff --git a/upstream/photocraft/crates/ui-egui/src/theme.rs b/upstream/photocraft/crates/ui-egui/src/theme.rs
+index 2c08f63..0cfcaa6 100644
+--- a/upstream/photocraft/crates/ui-egui/src/theme.rs
++++ b/upstream/photocraft/crates/ui-egui/src/theme.rs
+@@ -130,6 +130,12 @@ impl ThemeKind {
+     pub fn is_light(self) -> bool {
+         !self.is_dark()
+     }
++    /// `#RRGGBB` of the window chrome (title bar and status bar). A host uses it to colour the
++    /// system status bar and navigation indicator so they meet the app edge.
++    pub fn chrome_css(self) -> String {
++        let c = Tokens::for_kind(self).chrome;
++        format!("#{:02X}{:02X}{:02X}", c.r(), c.g(), c.b())
++    }
+     pub fn next(self) -> Self {
+         let i = Self::ALL.iter().position(|k| *k == self).unwrap_or(0);
+         Self::ALL[(i + 1) % Self::ALL.len()]
+diff --git a/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs b/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs
+new file mode 100644
+index 0000000..9aafff6
+--- /dev/null
++++ b/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs
+@@ -0,0 +1,87 @@
++//! Optional host-window full screen (HarmonyOS system bars hidden). The host injects
++//! [`WindowFullscreen`] through `Services`; without it nothing here is shown, so every other
++//! platform is unchanged. The host owns the real window state: [`request`] only asks, and the host
++//! reports the outcome (also when the system leaves full screen by itself) through `is_active`.
++
++use crate::{PhotocraftApp, i18n};
++
++/// Menu command id (Window › below Theme) that toggles host full screen.
++pub const COMMAND: &str = "window.fullscreen.toggle";
++
++pub struct WindowFullscreen {
++    /// Whether the host window is currently full screen (read every frame; the host requests a
++    /// repaint itself when the state changes).
++    pub is_active: Box<dyn Fn() -> bool>,
++    /// Ask the host to enter (`true`) or leave (`false`) full screen.
++    pub request: Box<dyn Fn(bool)>,
++}
++
++/// Whether the host offers full screen at all.
++pub fn available(app: &PhotocraftApp) -> bool {
++    app.services.window_fullscreen.is_some()
++}
++
++/// The host window's current state; `false` without a host service.
++pub fn active(app: &PhotocraftApp) -> bool {
++    app.services.window_fullscreen.as_ref().is_some_and(|f| (f.is_active)())
++}
++
++/// English label of the action the next click performs (translated when drawn).
++pub fn label(active: bool) -> &'static str {
++    if active { "Exit Full Screen" } else { "Enter Full Screen" }
++}
++
++/// Icon name of the action the next click performs.
++pub fn icon(active: bool) -> &'static str {
++    if active { "fullscreen-exit" } else { "fullscreen-enter" }
++}
++
++/// Toggle: ask the host for the opposite of its current state.
++pub fn toggle(app: &PhotocraftApp) -> bool {
++    let Some(f) = app.services.window_fullscreen.as_ref() else { return false };
++    let target = !(f.is_active)();
++    (f.request)(target);
++    target
++}
++
++/// The translated label, for tooltips and menu text.
++pub fn tr_label(active: bool) -> String {
++    i18n::tr(i18n::current(), label(active)).to_owned()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use std::cell::Cell;
++    use std::rc::Rc;
++
++    #[test]
++    fn labels_and_icons_follow_the_next_action() {
++        assert_eq!(label(false), "Enter Full Screen");
++        assert_eq!(label(true), "Exit Full Screen");
++        assert_eq!(icon(false), "fullscreen-enter");
++        assert_eq!(icon(true), "fullscreen-exit");
++        assert!(crate::icons::exists(icon(false)) && crate::icons::exists(icon(true)));
++        // Distinct from the "Only show canvas" button's glyph.
++        assert_ne!(icon(false), "maximize-2");
++        assert_ne!(icon(true), "maximize-2");
++        assert_ne!(icon(false), "canvas-only");
++        assert_ne!(icon(true), "canvas-only");
++    }
++
++    #[test]
++    fn toggle_requests_the_opposite_of_the_host_state() {
++        let state = Rc::new(Cell::new(false));
++        let asked = Rc::new(Cell::new(None));
++        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
++        assert!(!available(&app) && !toggle(&app));
++        let (s, a) = (state.clone(), asked.clone());
++        app.services.window_fullscreen = Some(WindowFullscreen { is_active: Box::new(move || s.get()), request: Box::new(move |on| a.set(Some(on))) });
++        assert!(available(&app) && !active(&app));
++        assert!(toggle(&app));
++        assert_eq!(asked.get(), Some(true));
++        state.set(true);
++        assert!(active(&app) && !toggle(&app));
++        assert_eq!(asked.get(), Some(false));
++    }
++}

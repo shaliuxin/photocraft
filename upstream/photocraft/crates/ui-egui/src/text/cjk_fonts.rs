@@ -1012,6 +1012,83 @@ pub(crate) fn set_craft_font_scale(ctx: &egui::Context, scale: f32) {
     let as_provider: std::sync::Arc<dyn FontProvider> = provider;
     ctx.set_font_providers(vec![as_provider]);
 }
+/// True for a TTF, OTF or collection small enough to register. Rejects HTML error pages.
+pub fn font_bytes_ok(bytes: &[u8]) -> bool {
+    let Some(tag) = bytes.get(..4) else { return false };
+    bytes.len() > 12 && bytes.len() <= MAX_FONT_BYTES as usize
+        && matches!(tag, b"\x00\x01\x00\x00" | b"OTTO" | b"true" | b"ttcf")
+}
+
+struct HostCjkFonts {
+    simplified: Option<Vec<u8>>,
+    traditional: Option<Vec<u8>>,
+}
+
+fn host_cjk_fonts() -> &'static std::sync::Mutex<HostCjkFonts> {
+    static FONTS: std::sync::OnceLock<std::sync::Mutex<HostCjkFonts>> = std::sync::OnceLock::new();
+    FONTS.get_or_init(|| std::sync::Mutex::new(HostCjkFonts { simplified: None, traditional: None }))
+}
+
+/// Keep HarmonyOS Sans (or another host-supplied face) for the UI and the type engine.
+/// `script` is `zh-hans` or `zh-hant`. A second store of the same script is ignored.
+pub fn store_host_cjk_font(script: &str, bytes: Vec<u8>) -> bool {
+    if !font_bytes_ok(&bytes) {
+        return false;
+    }
+    let traditional = match script {
+        "zh-hans" => false,
+        "zh-hant" => true,
+        _ => return false,
+    };
+    {
+        let mut fonts = host_cjk_fonts().lock().unwrap_or_else(|e| e.into_inner());
+        let slot = if traditional { &mut fonts.traditional } else { &mut fonts.simplified };
+        if slot.is_some() {
+            return true;
+        }
+        *slot = Some(bytes.clone());
+    }
+    register_host_text_font(&bytes);
+    true
+}
+
+fn register_host_text_font(bytes: &[u8]) {
+    photocraft_text::cjk::set_ui_locale(Some(crate::i18n::current().code()));
+    let mut engine = photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner());
+    engine.fonts.register_font_data(bytes.to_vec());
+    drop(engine);
+}
+
+/// Add the stored host faces again. `set_fonts` drops them; language changes call that.
+pub fn reapply_host_fonts(ctx: &egui::Context) {
+    let fonts = host_cjk_fonts().lock().unwrap_or_else(|e| e.into_inner());
+    let traditional_first = crate::i18n::current().code() == "zh-hant";
+    let mut pending = Vec::new();
+    let order: [(&str, Option<&Vec<u8>>); 2] = if traditional_first {
+        [("HarmonyOS Sans TC", fonts.traditional.as_ref()), ("HarmonyOS Sans SC", fonts.simplified.as_ref())]
+    } else {
+        [("HarmonyOS Sans SC", fonts.simplified.as_ref()), ("HarmonyOS Sans TC", fonts.traditional.as_ref())]
+    };
+    for (name, bytes) in order {
+        if let Some(bytes) = bytes {
+            pending.push((name.to_owned(), bytes.clone()));
+        }
+    }
+    drop(fonts);
+    if pending.is_empty() {
+        return;
+    }
+    photocraft_text::cjk::set_ui_locale(Some(crate::i18n::current().code()));
+    photocraft_text::shared().lock().unwrap_or_else(|e| e.into_inner()).fonts.register_font_data(pending.iter().next().unwrap().1.clone());
+    for (name, bytes) in pending {
+        // A later face must not register the earlier one again.
+        if ctx.fonts(|fonts| fonts.definitions().font_data.contains_key(&name)) {
+            continue;
+        }
+        add_to_all_families(ctx, name, FontData::from_owned(bytes));
+    }
+}
+
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) mod tests;

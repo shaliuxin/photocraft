@@ -148,11 +148,9 @@ impl GpuRender {
             device: self.device.clone(),
             queue: self.queue.clone(),
             target_format: self.config.format,
+            // 0.37 moved present mode and frame latency out of RenderState into
+            // WgpuConfiguration; this host drives its own wgpu Surface, so nothing to pass.
             renderer: self.renderer.clone(),
-            surface_config: egui_wgpu::SurfaceConfig {
-                present_mode: self.config.present_mode,
-                desired_maximum_frame_latency: Some(self.config.desired_maximum_frame_latency),
-            },
         }
     }
     pub fn resize(&mut self, w: u32, h: u32) -> Result<(), String> {

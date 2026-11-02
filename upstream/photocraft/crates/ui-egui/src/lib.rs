@@ -25,6 +25,8 @@ macro_rules! tl {
 mod brush_mode_menu;
 pub mod canvas;
 pub mod control;
+pub mod path_pick;
+pub mod window_fullscreen;
 pub mod dialogs;
 pub mod dock;
 pub mod file_dialog;
@@ -445,6 +447,12 @@ pub struct PhotocraftApp {
     /// Windows and Linux: the window has no OS decorations and the app's top bar is the title bar
     /// (caption buttons, window dragging and edge resizing, `titlebar`).
     pub custom_titlebar: bool,
+    /// A wrapping host's window chrome: (left, width) of the drag area the titlebar draws into,
+    /// so clicks inside it stay out of the canvas. Zero without a host titlebar.
+    pub host_titlebar: egui::Vec2,
+    /// Whether the host opens documents in its own windows (the 2in1 multi-window mode); the
+    /// web's window.open document flow and the desktop's separate windows are not used then.
+    pub native_doc_windows: bool,
     /// Last window title sent to the OS (`ViewportCommand::Title`, see `panels::sync_window_title`):
     /// sent again only when it changes, so idle frames don't spam the backend.
     last_window_title: String,

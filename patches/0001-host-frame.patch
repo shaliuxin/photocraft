@@ -45,10 +45,10 @@ aarch64-unknown-linux-ohos and x86_64-unknown-linux-ohos.
  14 files changed, 167 insertions(+), 82 deletions(-)
  create mode 100644 crates/ui-egui/src/app/host.rs
 
-diff --git a/Cargo.lock b/Cargo.lock
+diff --git a/upstream/photocraft/Cargo.lock b/upstream/photocraft/Cargo.lock
 index a2a355c..8b6984d 100644
---- a/Cargo.lock
-+++ b/Cargo.lock
+--- a/upstream/photocraft/Cargo.lock
++++ b/upstream/photocraft/Cargo.lock
 @@ -5402,6 +5402,7 @@ dependencies = [
   "craft-update",
   "eframe",
@@ -65,10 +65,10 @@ index a2a355c..8b6984d 100644
   "winsafe",
  ]
  
-diff --git a/crates/ui-egui/Cargo.toml b/crates/ui-egui/Cargo.toml
+diff --git a/upstream/photocraft/crates/ui-egui/Cargo.toml b/upstream/photocraft/crates/ui-egui/Cargo.toml
 index c95da85..5f10af8 100644
---- a/crates/ui-egui/Cargo.toml
-+++ b/crates/ui-egui/Cargo.toml
+--- a/upstream/photocraft/crates/ui-egui/Cargo.toml
++++ b/upstream/photocraft/crates/ui-egui/Cargo.toml
 @@ -4,6 +4,16 @@ version.workspace = true
  edition.workspace = true
  license.workspace = true
@@ -109,10 +109,10 @@ index c95da85..5f10af8 100644
  rayon = { workspace = true }
  # Safe native UI-language APIs (Windows/macOS); no subprocess or web dependency.
  sys-locale = "=0.3.2"
-diff --git a/crates/ui-egui/src/app.rs b/crates/ui-egui/src/app.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
 index 5672b91..887f77f 100644
---- a/crates/ui-egui/src/app.rs
-+++ b/crates/ui-egui/src/app.rs
+--- a/upstream/photocraft/crates/ui-egui/src/app.rs
++++ b/upstream/photocraft/crates/ui-egui/src/app.rs
 @@ -15,6 +15,7 @@ mod control;
  mod files;
  mod frame;
@@ -191,10 +191,10 @@ index 5672b91..887f77f 100644
          self.finish_type_reset_pass(ui.ctx());
      }
  }
-diff --git a/crates/ui-egui/src/app/frame.rs b/crates/ui-egui/src/app/frame.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/app/frame.rs b/upstream/photocraft/crates/ui-egui/src/app/frame.rs
 index 49b2267..f772b2b 100644
---- a/crates/ui-egui/src/app/frame.rs
-+++ b/crates/ui-egui/src/app/frame.rs
+--- a/upstream/photocraft/crates/ui-egui/src/app/frame.rs
++++ b/upstream/photocraft/crates/ui-egui/src/app/frame.rs
 @@ -21,8 +21,9 @@ impl PhotocraftApp {
  }
  
@@ -257,10 +257,10 @@ index 49b2267..f772b2b 100644
          // The Type tool's IME descriptor is the last writer of this pass: every panel and the
          // canvas have finished mutating the model, and an absent/focus-moved editor ends here.
          type_tool::sync_ime(self, &ctx);
-diff --git a/crates/ui-egui/src/app/gpu.rs b/crates/ui-egui/src/app/gpu.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/app/gpu.rs b/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
 index 055a85e..4b78988 100644
---- a/crates/ui-egui/src/app/gpu.rs
-+++ b/crates/ui-egui/src/app/gpu.rs
+--- a/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
++++ b/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
 @@ -3,7 +3,7 @@ use super::{PhotocraftApp, gpu_canvas, gpu_status};
  impl PhotocraftApp {
      /// Draw the document canvas on the GPU (custom WGSL shader) instead of via egui textures.
@@ -279,11 +279,11 @@ index 055a85e..4b78988 100644
          self.window_device = Some((device.clone(), photocraft_gpu::DeviceHealth::watch(device)));
      }
  
-diff --git a/crates/ui-egui/src/app/host.rs b/crates/ui-egui/src/app/host.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/app/host.rs b/upstream/photocraft/crates/ui-egui/src/app/host.rs
 new file mode 100644
 index 0000000..776b977
 --- /dev/null
-+++ b/crates/ui-egui/src/app/host.rs
++++ b/upstream/photocraft/crates/ui-egui/src/app/host.rs
 @@ -0,0 +1,80 @@
 +//! The frame a host that is not eframe drives.
 +//!
@@ -365,10 +365,10 @@ index 0000000..776b977
 +        self.finish_captures(finished);
 +    }
 +}
-diff --git a/crates/ui-egui/src/canvas/background_redraw.rs b/crates/ui-egui/src/canvas/background_redraw.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs b/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
 index 003d250..ee7d088 100644
---- a/crates/ui-egui/src/canvas/background_redraw.rs
-+++ b/crates/ui-egui/src/canvas/background_redraw.rs
+--- a/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
++++ b/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
 @@ -115,7 +115,7 @@ pub(crate) struct Redraw {
      doc: Arc<Document>,
      display: u64,
@@ -423,10 +423,10 @@ index 003d250..ee7d088 100644
      blocks: &[Rect],
      todo: &[usize],
      stop: &AtomicBool,
-diff --git a/crates/ui-egui/src/canvas/gpu_canvas.rs b/crates/ui-egui/src/canvas/gpu_canvas.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
 index 48aeb07..9c29f1b 100644
---- a/crates/ui-egui/src/canvas/gpu_canvas.rs
-+++ b/crates/ui-egui/src/canvas/gpu_canvas.rs
+--- a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
++++ b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
 @@ -29,8 +29,8 @@ use std::collections::HashMap;
  use std::num::NonZeroU64;
  use std::sync::atomic::Ordering;
@@ -438,10 +438,10 @@ index 48aeb07..9c29f1b 100644
  
  use crate::render_path::CpuReason;
  
-diff --git a/crates/ui-egui/src/dialogs/camera_raw_gpu.rs b/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs b/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
 index 5e9f871..9e1968e 100644
---- a/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
-+++ b/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
+--- a/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
++++ b/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
 @@ -10,7 +10,7 @@
  use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
  use std::sync::{Arc, Mutex, OnceLock};
@@ -451,10 +451,10 @@ index 5e9f871..9e1968e 100644
  use photocraft_algo::camera_raw::CameraRaw;
  use photocraft_gpu::{CameraRawDevelop, DeviceHealth};
  
-diff --git a/crates/ui-egui/src/file_dialog.rs b/crates/ui-egui/src/file_dialog.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 index bddc679..b90a6bf 100644
---- a/crates/ui-egui/src/file_dialog.rs
-+++ b/crates/ui-egui/src/file_dialog.rs
+--- a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
++++ b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 @@ -67,9 +67,17 @@ impl FileDialogReply {
      }
  }
@@ -483,10 +483,10 @@ index bddc679..b90a6bf 100644
          let Some(p) = self.file_dialog.as_mut() else { return };
          if p.held.is_some() {
              // The question whether to replace answers through `answer_replace`. Closed without an
-diff --git a/crates/ui-egui/src/lib.rs b/crates/ui-egui/src/lib.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
 index e272ddb..946bf4a 100644
---- a/crates/ui-egui/src/lib.rs
-+++ b/crates/ui-egui/src/lib.rs
+--- a/upstream/photocraft/crates/ui-egui/src/lib.rs
++++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
 @@ -9,7 +9,7 @@
  
  /// PhotoCraft as craft-update knows it, with its 128 px icon and accent colour: the update
@@ -514,10 +514,10 @@ index e272ddb..946bf4a 100644
      /// Why the GPU canvas was dropped (see `gpu_status::fall_back`).
      gpu_fault: Option<photocraft_gpu::Fault>,
      /// Out-of-memory errors this session after which the GPU canvas was rebuilt by itself (#6564).
-diff --git a/crates/ui-egui/src/monitor_status.rs b/crates/ui-egui/src/monitor_status.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/monitor_status.rs b/upstream/photocraft/crates/ui-egui/src/monitor_status.rs
 index 2350e6d..9021cd5 100644
---- a/crates/ui-egui/src/monitor_status.rs
-+++ b/crates/ui-egui/src/monitor_status.rs
+--- a/upstream/photocraft/crates/ui-egui/src/monitor_status.rs
++++ b/upstream/photocraft/crates/ui-egui/src/monitor_status.rs
 @@ -69,14 +69,19 @@ pub fn poll(app: &mut PhotocraftApp, ctx: &egui::Context) {
      poll_with_output_name(app, ctx, None);
  }
@@ -543,10 +543,10 @@ index 2350e6d..9021cd5 100644
      poll(app, ctx);
  }
  
-diff --git a/crates/ui-egui/src/texel_guard.rs b/crates/ui-egui/src/texel_guard.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
 index 28bca7c..07c4cb1 100644
---- a/crates/ui-egui/src/texel_guard.rs
-+++ b/crates/ui-egui/src/texel_guard.rs
+--- a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
++++ b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
 @@ -19,7 +19,7 @@
  
  use std::sync::Arc;
@@ -556,10 +556,10 @@ index 28bca7c..07c4cb1 100644
  use egui::{Color32, FullOutput, ImageData, TexturesDelta};
  
  /// What a fully transparent texel is uploaded as.
-diff --git a/crates/ui-egui/src/updates_ui.rs b/crates/ui-egui/src/updates_ui.rs
+diff --git a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
 index 2c5a1be..99f5d34 100644
---- a/crates/ui-egui/src/updates_ui.rs
-+++ b/crates/ui-egui/src/updates_ui.rs
+--- a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
++++ b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
 @@ -9,7 +9,7 @@ pub(crate) struct Runtime {
      startup_checked: bool,
      notified_version: Option<String>,
