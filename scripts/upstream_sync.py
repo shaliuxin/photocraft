@@ -219,31 +219,36 @@ def cmd_pins(args: argparse.Namespace) -> int:
 
 
 def cmd_versions(args: argparse.Namespace) -> int:
-    """versionName mirrors the upstream photocraft version verbatim; versionCode is left untouched.
+    """versionName mirrors upstream verbatim; versionCode packs the same version.
 
-    The hmos app tracks the upstream release: the displayed versionName is exactly the upstream
-    `version` from upstream/Cargo.toml, with no hmos revision suffix. versionCode is preserved —
-    HarmonyOS only requires it to grow across published builds, so it is managed separately rather
-    than packed from the version name.
+    The hmos app tracks the upstream release: versionName is exactly the upstream `version` from
+    upstream/Cargo.toml (no hmos revision suffix), and versionCode packs that same
+    major.minor.patch as major*10^6 + minor*10^4 + patch*100, so the two grow together as
+    upstream bumps. HarmonyOS requires versionCode to be strictly increasing across published
+    builds, and this packing preserves that ordering for realistic version numbers.
     """
     # The capture, not the whole line: `version = "0.18.0"` is not JSON.
     upstream_version = re.search(r'^version = "([^"]+)"', read(UPSTREAM / "Cargo.toml"), re.MULTILINE).group(1)
-    current = app_version()
-    target = upstream_version
-    if target == current:
-        print(f"version already at {target}")
+    app = json.loads(read(APP_JSON))
+    current = app["app"]["versionName"]
+    current_code = app["app"]["versionCode"]
+    upstream_parts = [int(p) for p in upstream_version.split(".")[:3]]
+    target = ".".join(str(p) for p in upstream_parts)
+    code = upstream_parts[0] * 1_000_000 + upstream_parts[1] * 10_000 + upstream_parts[2] * 100
+    if target == current and code == current_code:
+        print(f"versions already at {target} / {code}")
         return 0
-    print(f"versionName {current} -> {target} (versionCode preserved)")
+    print(f"versionName {current} -> {target}, versionCode {current_code} -> {code}")
     if not args.write:
         print("run with --write to apply")
         return 1
-    app = json.loads(read(APP_JSON))
     app["app"]["versionName"] = target
+    app["app"]["versionCode"] = code
     write(APP_JSON, json.dumps(app, indent=2) + "\n")
     manifest = read(ADAPTER_MANIFEST)
     manifest = ADAPTER_MANIFEST_VERSION.sub(f'version = "{upstream_version}"', manifest, count=1)
     write(ADAPTER_MANIFEST, manifest)
-    print("updated AppScope/app.json5 versionName and native/rust/Cargo.toml version")
+    print("updated AppScope/app.json5 versionName/versionCode and native/rust/Cargo.toml version")
     return 0
 
 
