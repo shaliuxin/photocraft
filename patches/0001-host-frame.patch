@@ -1,8 +1,8 @@
 diff --git a/upstream/photocraft/Cargo.lock b/upstream/photocraft/Cargo.lock
-index 36ce4a272affabcfc68994783d40da661f3fb842..e191ebf5e819419b3b01af171ab3e5e1b82154eb 100644
+index 27fbbbc09c7f2d9d5c6cc6eb1787572a6947bb22..f9ad00a53c7153d71d463ba54cdd53f07f7c6b2b 100644
 --- a/upstream/photocraft/Cargo.lock
 +++ b/upstream/photocraft/Cargo.lock
-@@ -5410,6 +5410,7 @@ dependencies = [
+@@ -5422,6 +5422,7 @@ dependencies = [
   "craft-update",
   "eframe",
   "egui",
@@ -10,7 +10,7 @@ index 36ce4a272affabcfc68994783d40da661f3fb842..e191ebf5e819419b3b01af171ab3e5e1
   "egui_extras",
   "egui_kittest",
   "epaint_default_fonts",
-@@ -5442,6 +5443,7 @@ dependencies = [
+@@ -5454,6 +5455,7 @@ dependencies = [
   "toml",
   "unicode-bidi",
   "web-time",
@@ -63,7 +63,7 @@ index 326e6bf7a7d2d1a476db46080c205f066b5d7b7b..9369dcbea96b73db1f3b6b9ccd5e531a
  # Safe native UI-language APIs (Windows/macOS); no subprocess or web dependency.
  sys-locale = "=0.3.2"
 diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
-index 14038b10de4e353ae0b9533cd58646e82f744da5..993ae9bcdfc57bdb2ca24c11cdb8c90664a04623 100644
+index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd952dca0988 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app.rs
 @@ -15,6 +15,7 @@ mod control;
@@ -74,7 +74,16 @@ index 14038b10de4e353ae0b9533cd58646e82f744da5..993ae9bcdfc57bdb2ca24c11cdb8c906
  mod ime;
  mod input;
  mod prefs;
-@@ -216,61 +217,26 @@ impl PhotocraftApp {
+@@ -90,6 +91,8 @@ impl PhotocraftApp {
+             styled: false,
+             integrated_titlebar: false,
+             custom_titlebar: false,
++            host_titlebar: egui::Vec2::ZERO,
++            native_doc_windows: false,
+             last_window_title: String::new(),
+             fonts_ready: false,
+             last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
+@@ -217,61 +220,26 @@ impl PhotocraftApp {
      }
  }
  
@@ -319,7 +328,7 @@ index 5e9f8719faeaa324eafffd0fbbc4a2108f4af459..9e1968ec161cb64c34a2210c0ee832ce
  use photocraft_gpu::{CameraRawDevelop, DeviceHealth};
  
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
-index bddc6796d3d255986e0ca4a700761b9f238a5858..b90a6bf653a4bc077708c8b61427bd2f624b6b59 100644
+index bddc6796d3d255986e0ca4a700761b9f238a5858..d779b517b9738e1835a11d6b2bbb2689037e1c2c 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 @@ -67,9 +67,17 @@ impl FileDialogReply {
@@ -341,7 +350,79 @@ index bddc6796d3d255986e0ca4a700761b9f238a5858..b90a6bf653a4bc077708c8b61427bd2f
  
  /// What to do with the answer (`None`: cancelled).
  type Then = Box<dyn FnOnce(&mut PhotocraftApp, Option<FileDialogAnswer>) -> Result<Value, String>>;
-@@ -307,7 +315,7 @@ impl PhotocraftApp {
+@@ -92,6 +100,14 @@ pub(crate) struct Pending {
+ 
+ /// The error of a cancelled dialog: not reported, since backing out is the user's choice.
+ pub(crate) const CANCELLED: &str = "cancelled";
++thread_local! {
++    /// The next folder request is for output (see [`PhotocraftApp::ask_output_folder`]).
++    static FOLDER_FOR_OUTPUT: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++    /// The next single-file open may be a photo (Place, Replace Contents): keep `pick_open`
++    /// (files-vs-gallery chooser on HarmonyOS) instead of `pick_import`.
++    static OPEN_ALLOWS_GALLERY: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
++}
++
+ const UNEXPECTED: &str = "the file dialog gave an unexpected answer";
+ 
+ impl PhotocraftApp {
+@@ -109,7 +125,38 @@ impl PhotocraftApp {
+         then: impl FnOnce(&mut Self, FileDialogAnswer) -> Result<Value, String> + 'static,
+     ) -> Result<Value, String> {
+         if self.services.file_dialog.is_none() {
+-            return Err(CANCELLED.into());
++            // Existing synchronous hosts (HarmonyOS) select capability-bearing targets at once.
++            let answer = match &request {
++                FileDialogRequest::Save { suggested } => self.services.pick_save.as_mut().and_then(|pick| pick(suggested)).map(FileDialogAnswer::SaveTo),
++                FileDialogRequest::Open { multiple: true, .. } if self.services.pick_open_paths.is_some() => {
++                    self.services.pick_open_paths.as_mut().and_then(|pick| pick()).map(FileDialogAnswer::Paths)
++                }
++                // Single-file imports (notes, presets, scripts, path_pick staging, …) prefer
++                // `pick_import` so HarmonyOS can open the file manager without the document
++                // "from where" source chooser that File › Open uses.
++                FileDialogRequest::Open { multiple: false, .. }
++                    if self.services.pick_import.is_some() && !OPEN_ALLOWS_GALLERY.with(|g| g.replace(false)) =>
++                {
++                    match self.services.pick_import.as_mut().and_then(|pick| pick()) {
++                        Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
++                        None => None,
++                    }
++                }
++                FileDialogRequest::Open { .. } => match self.services.pick_open.as_mut().and_then(|pick| pick()) {
++                    Some((name, bytes)) => Some(FileDialogAnswer::Contents(name, bytes?)),
++                    None => None,
++                },
++                // Sync hosts answer folders through `pick_folder` (HarmonyOS); without one, cancel.
++                FileDialogRequest::Folder { .. } => {
++                    let output = FOLDER_FOR_OUTPUT.with(|o| o.replace(false));
++                    match self.services.pick_folder.as_mut().and_then(|pick| pick(output)) {
++                        Some(Ok(path)) => Some(FileDialogAnswer::FolderTo(path)),
++                        Some(Err(why)) => return Err(why),
++                        None => None,
++                    }
++                }
++            };
++            return then(self, answer.ok_or(CANCELLED)?);
+         }
+         if self.file_dialog.is_some() {
+             return Err("a file dialog is already open".into());
+@@ -138,6 +185,16 @@ impl PhotocraftApp {
+         })
+     }
+ 
++    /// [`Self::ask_folder`] for a folder the command writes into (an export or batch output).
++    /// Synchronous hosts' [`crate::Services::pick_folder`] is told so: a device without a folder
++    /// picker can offer its own writable folder for output, but not for input.
++    pub(crate) fn ask_output_folder(&mut self, then: impl FnOnce(&mut Self, String) -> Result<Value, String> + 'static) -> Result<Value, String> {
++        FOLDER_FOR_OUTPUT.with(|o| o.set(true));
++        let r = self.ask_folder(then);
++        FOLDER_FOR_OUTPUT.with(|o| o.set(false));
++        r
++    }
++
+     /// Ask where to save: `then` gets the chosen path, with a lowercase extension when
+     /// Preferences ▸ File Handling › Lowercase Extension is on (its default). When that, or the
+     /// extension added to a bare name, changes the path to one where a file exists, the app asks
+@@ -307,7 +364,7 @@ impl PhotocraftApp {
  
      /// Called every frame: shows a queued dialog with `parent` (the window) as its parent, and
      /// continues the action that asked once the answer is in. Its errors go to the status bar.
@@ -351,7 +432,7 @@ index bddc6796d3d255986e0ca4a700761b9f238a5858..b90a6bf653a4bc077708c8b61427bd2f
          if p.held.is_some() {
              // The question whether to replace answers through `answer_replace`. Closed without an
 diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
-index e17b2bc80ddd1f148bb766f962d5f91d116b4b4d..4378ae4666ecda3e57769f08c111a08ddaa082cc 100644
+index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115dc7b3769 100644
 --- a/upstream/photocraft/crates/ui-egui/src/lib.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
 @@ -11,7 +11,7 @@
@@ -363,7 +444,29 @@ index e17b2bc80ddd1f148bb766f962d5f91d116b4b4d..4378ae4666ecda3e57769f08c111a08d
  pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
      icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.photocraft.png")),
      accent: Some([0x2f, 0x7b, 0xf5]),
-@@ -640,7 +640,7 @@ pub struct PhotocraftApp {
+@@ -27,6 +27,8 @@ macro_rules! tl {
+ mod brush_mode_menu;
+ pub mod canvas;
+ pub mod control;
++pub mod path_pick;
++pub mod window_fullscreen;
+ pub mod dialogs;
+ pub mod dock;
+ pub mod file_dialog;
+@@ -457,6 +459,12 @@ pub struct PhotocraftApp {
+     /// Windows and Linux: the window has no OS decorations and the app's top bar is the title bar
+     /// (caption buttons, window dragging and edge resizing, `titlebar`).
+     pub custom_titlebar: bool,
++    /// A wrapping host's window chrome: (left, width) of the drag area the titlebar draws into,
++    /// so clicks inside it stay out of the canvas. Zero without a host titlebar.
++    pub host_titlebar: egui::Vec2,
++    /// Whether the host opens documents in its own windows (the 2in1 multi-window mode); the
++    /// web's window.open document flow and the desktop's separate windows are not used then.
++    pub native_doc_windows: bool,
+     /// Last window title sent to the OS (`ViewportCommand::Title`, see `panels::sync_window_title`):
+     /// sent again only when it changes, so idle frames don't spam the backend.
+     last_window_title: String,
+@@ -642,7 +650,7 @@ pub struct PhotocraftApp {
      gpu: Option<gpu_canvas::GpuCanvas>,
      /// The device the window itself draws with, and its health flag: the GPU canvas's, or one
      /// watched for the CPU canvas (see `gpu_status::check_window`).
@@ -372,7 +475,7 @@ index e17b2bc80ddd1f148bb766f962d5f91d116b4b4d..4378ae4666ecda3e57769f08c111a08d
      /// That device was lost: frames draw nothing and the app closes once its work is saved (#3438).
      window_lost: bool,
      /// When (in `egui::InputState::time`) to try saving unsaved work for recovery again after a
-@@ -648,7 +648,7 @@ pub struct PhotocraftApp {
+@@ -650,7 +658,7 @@ pub struct PhotocraftApp {
      window_recovery_retry: Option<f64>,
      /// The render state the GPU canvas was built on, kept after it is dropped so Retry GPU can
      /// build a new one on the same device (see `gpu_status::choose_recovery`, #6577).

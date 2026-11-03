@@ -1,8 +1,71 @@
 diff --git a/upstream/photocraft/crates/engine/src/installed_profiles.rs b/upstream/photocraft/crates/engine/src/installed_profiles.rs
-index 3056c3eb4aff88e53d5eb2b6ac4391e48cb24648..9c57100c48831151142ec289f455ed8f70609c5f 100644
+index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..9c57100c48831151142ec289f455ed8f70609c5f 100644
 --- a/upstream/photocraft/crates/engine/src/installed_profiles.rs
 +++ b/upstream/photocraft/crates/engine/src/installed_profiles.rs
-@@ -261,6 +261,22 @@ mod tests {
+@@ -40,9 +40,29 @@ const MAX_FILES: usize = 1000;
+ /// Larger files are not profiles anyone prints with.
+ const MAX_BYTES: u64 = 32 << 20;
+ 
+-/// The operating system's colour profile folders.
++/// The app's own profile folder (HarmonyOS: `<filesDir>/icc`), set by a sandboxed host.
++static APP_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
++
++/// Sets the app's own profile folder: profiles imported into it are listed like installed ones.
++/// HarmonyOS lists only this folder (the app can't read the system's).
++pub fn set_app_profile_dir(dir: Option<PathBuf>) {
++    *APP_DIR.lock().unwrap_or_else(|e| e.into_inner()) = dir;
++    refresh();
++}
++
++/// The app's own profile folder, if the host set one.
++pub fn app_profile_dir() -> Option<PathBuf> {
++    APP_DIR.lock().unwrap_or_else(|e| e.into_inner()).clone()
++}
++
++/// The operating system's colour profile folders, then the app's own (see
++/// [`set_app_profile_dir`]). HarmonyOS apps are sandboxed: only the app's folder.
+ pub fn profile_dirs() -> Vec<PathBuf> {
+     let mut v = Vec::new();
++    if cfg!(target_env = "ohos") {
++        v.extend(app_profile_dir());
++        return v;
++    }
+     let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from);
+     if cfg!(windows) {
+         let root = std::env::var_os("SystemRoot").map_or_else(|| PathBuf::from(r"C:\Windows"), PathBuf::from);
+@@ -61,6 +81,7 @@ pub fn profile_dirs() -> Vec<PathBuf> {
+             v.push(h.join(".color/icc"));
+         }
+     }
++    v.extend(app_profile_dir());
+     v
+ }
+ 
+@@ -115,14 +136,20 @@ fn read_one(path: &Path) -> Option<InstalledProfile> {
+ /// within this long.
+ const FRESH: std::time::Duration = std::time::Duration::from_secs(10);
+ 
++type Cache = Mutex<Option<(std::time::Instant, Vec<InstalledProfile>)>>;
++static CACHE: Cache = Mutex::new(None);
++
++/// Forget the cached scan: the next [`installed`] rescans (a profile was just imported).
++pub fn refresh() {
++    *CACHE.lock().unwrap_or_else(|e| e.into_inner()) = None;
++}
++
+ /// The installed profiles (cached; see [`FRESH`]). Empty on the web.
+ pub fn installed() -> Vec<InstalledProfile> {
+     if cfg!(target_arch = "wasm32") {
+         return Vec::new();
+     }
+-    type Cache = Mutex<Option<(std::time::Instant, Vec<InstalledProfile>)>>;
+-    static CACHE: std::sync::OnceLock<Cache> = std::sync::OnceLock::new();
+-    let cache = CACHE.get_or_init(Default::default);
++    let cache = &CACHE;
+     if let Some((at, list)) = cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
+         && at.elapsed() < FRESH
+     {
+@@ -218,6 +245,38 @@ mod tests {
          let _ = std::fs::remove_dir_all(&d);
      }
  
@@ -22,9 +85,357 @@ index 3056c3eb4aff88e53d5eb2b6ac4391e48cb24648..9c57100c48831151142ec289f455ed8f
 +        let _ = std::fs::remove_dir_all(&d);
 +    }
 +
++    #[test]
++    fn the_app_profile_folder_is_listed_and_a_refresh_rescans() {
++        let d = temp_dir("app");
++        set_app_profile_dir(Some(d.clone()));
++        assert!(profile_dirs().contains(&d));
++        let before = installed().len();
++        std::fs::write(d.join("imported.icc"), Builtin::Srgb.profile().to_bytes().as_slice()).unwrap();
++        refresh();
++        let after = installed();
++        set_app_profile_dir(None);
++        assert!(after.iter().any(|p| p.path.ends_with("imported.icc")), "{after:?}");
++        assert!(after.len() > before);
++        assert!(!profile_dirs().contains(&d));
++        let _ = std::fs::remove_dir_all(&d);
++    }
++
      #[test]
      fn scan_of_nothing_is_empty() {
          assert!(scan(&[]).is_empty());
+diff --git a/upstream/photocraft/crates/engine/src/prefs.rs b/upstream/photocraft/crates/engine/src/prefs.rs
+index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d9225d53941 100644
+--- a/upstream/photocraft/crates/engine/src/prefs.rs
++++ b/upstream/photocraft/crates/engine/src/prefs.rs
+@@ -56,10 +56,10 @@ choice!(TypeUnit { Points = "points", Pixels = "pixels", Millimeters = "mm" } de
+ choice!(PointSize { PostScript = "postScript", Traditional = "traditional" } default PostScript);
+ choice!(Interpolation { BicubicAutomatic = "bicubicAutomatic", Nearest = "nearestNeighbor", Bilinear = "bilinear", Bicubic = "bicubic", BicubicSmoother = "bicubicSmoother", BicubicSharper = "bicubicSharper", PreserveDetails = "preserveDetails" } default BicubicAutomatic);
+ choice!(ColorPicker { Adobe = "adobe", System = "system" } default Adobe);
+-choice!(Theme { Pro = "pro", ProMedium = "proMedium", ProLightGray = "proLightGray", ProLight = "proLight", Studio = "studio", StudioLight = "studioLight", Classic = "classic", SolarizedDark = "solarizedDark", Adwaita = "adwaita", AdwaitaDark = "adwaitaDark", BreezeLight = "breezeLight", BreezeDark = "breezeDark", SoftDark = "softDark", SoftLight = "softLight" } default ProMedium);
++choice!(Theme { Pro = "pro", ProMedium = "proMedium", ProLightGray = "proLightGray", ProLight = "proLight", Studio = "studio", StudioLight = "studioLight", Classic = "classic", SolarizedDark = "solarizedDark", Adwaita = "adwaita", AdwaitaDark = "adwaitaDark", BreezeLight = "breezeLight", BreezeDark = "breezeDark", SoftDark = "softDark", SoftLight = "softLight", ArkuiLight = "arkuiLight", ArkuiDark = "arkuiDark", ArkuiProLight = "arkuiProLight", ArkuiProDark = "arkuiProDark" } default ProMedium);
+ choice!(AppearanceMode { Auto = "auto", Dark = "dark", Light = "light" } default Dark);
+-choice!(DarkTheme { Pro = "pro", ProMedium = "proMedium", Studio = "studio", SolarizedDark = "solarizedDark", AdwaitaDark = "adwaitaDark", BreezeDark = "breezeDark", SoftDark = "softDark" } default ProMedium);
+-choice!(LightTheme { ProLight = "proLight", ProLightGray = "proLightGray", StudioLight = "studioLight", Classic = "classic", Adwaita = "adwaita", BreezeLight = "breezeLight", SoftLight = "softLight" } default ProLight);
++choice!(DarkTheme { Pro = "pro", ProMedium = "proMedium", Studio = "studio", SolarizedDark = "solarizedDark", AdwaitaDark = "adwaitaDark", BreezeDark = "breezeDark", SoftDark = "softDark", ArkuiDark = "arkuiDark", ArkuiProDark = "arkuiProDark" } default ProMedium);
++choice!(LightTheme { ProLight = "proLight", ProLightGray = "proLightGray", StudioLight = "studioLight", Classic = "classic", Adwaita = "adwaita", BreezeLight = "breezeLight", SoftLight = "softLight", ArkuiLight = "arkuiLight", ArkuiProLight = "arkuiProLight" } default ProLight);
+ choice!(CanvasColor { Default = "default", Black = "black", DarkGray = "darkGray", MediumGray = "mediumGray", LightGray = "lightGray", Custom = "custom" } default Default);
+ choice!(CanvasBorder { DropShadow = "dropShadow", Line = "line", None = "none" } default DropShadow);
+ choice!(UiScale { Auto = "auto", P75 = "75", P80 = "80", P85 = "85", P90 = "90", P95 = "95", P100 = "100", P105 = "105", P110 = "110", P115 = "115", P120 = "120", P125 = "125", P150 = "150", P175 = "175", P200 = "200", P250 = "250", P300 = "300" } default Auto);
+@@ -100,6 +100,14 @@ choice!(
+     /// pointer (Photoshop), or erase with the current brush while dragging (Krita, Paint).
+     RightClickPaint { BrushPicker = "brushPicker", Erase = "erase" } default BrushPicker
+ );
++choice!(
++    /// Action for a double-tap on the pen body.
++    StylusDoubleTap { Eraser = "eraser", Previous = "previous", Off = "off" } default Eraser
++);
++choice!(
++    /// Action for a pen-body long-press or squeeze.
++    StylusLongPress { ContextMenu = "contextMenu", Off = "off" } default ContextMenu
++);
+ choice!(OtherCursor { Standard = "standard", Precise = "precise" } default Standard);
+ choice!(CheckerSize { None = "none", Small = "small", Medium = "medium", Large = "large" } default Medium);
+ choice!(CheckerColors { Light = "light", Medium = "medium", Dark = "dark", Red = "red", Orange = "orange", Green = "green", Blue = "blue", Purple = "purple", Custom = "custom" } default Light);
+@@ -396,6 +404,15 @@ pub struct Tools {
+     pub right_click_with_painting_tools: RightClickPaint,
+     /// Pen tablets: pressure, tilt and rotation reach the brush (off: a pen paints like a mouse).
+     pub use_tablet_pressure: bool,
++    /// Fingers navigate the canvas while the pen operates the current tool.
++    pub block_finger_input: bool,
++    /// Whether the user or first-connection setup has chosen the finger-input policy.
++    /// Kept out of the generic preferences rows; the stylus controls own it.
++    pub block_finger_input_configured: bool,
++    /// Show the tool/cursor preview while a pen is hovering above the surface.
++    pub stylus_hover_preview: bool,
++    pub stylus_double_tap: StylusDoubleTap,
++    pub stylus_long_press: StylusLongPress,
+     /// Pen pressure response: `[input, output]` control points in 0..1 that the pen's pressure
+     /// passes through before it reaches any brush ([`PressureCurve`]). Linear by default.
+     pub pressure_curve: Vec<[f32; 2]>,
+@@ -423,6 +440,11 @@ impl Default for Tools {
+             double_click_layer_mask_launches_select_and_mask: true,
+             right_click_with_painting_tools: RightClickPaint::BrushPicker,
+             use_tablet_pressure: true,
++            block_finger_input: false,
++            block_finger_input_configured: false,
++            stylus_hover_preview: false,
++            stylus_double_tap: StylusDoubleTap::Eraser,
++            stylus_long_press: StylusLongPress::ContextMenu,
+             pressure_curve: vec![[0.0, 0.0], [1.0, 1.0]],
+             bundle_nudges: true,
+             nudge_bundle_pause_ms: 1000,
+@@ -1369,6 +1391,13 @@ impl Session {
+         if !v.is_object() {
+             return Err("preferences: expected a JSON object".into());
+         }
++        // Older settings did not record whether finger blocking was explicitly chosen.
++        // Preserve a saved policy rather than overriding a possible user opt-out.
++        if let Some(tools) = v.get_mut("tools").and_then(Value::as_object_mut)
++            && tools.get("blockFingerInput").is_some_and(Value::is_boolean)
++        {
++            tools.entry("blockFingerInputConfigured").or_insert(json!(true));
++        }
+         // Files before version 2 hold Use Shift Key for Tool Switch off because that was the
+         // default when they were written: every key is saved, chosen or not. Like Photoshop it is
+         // on by default now (#3528), so those files take the new default (#5647: a tool letter
+@@ -1386,10 +1415,10 @@ impl Session {
+             && let Some(theme) = interface.get("theme").and_then(Value::as_str).and_then(Theme::parse)
+         {
+             let (mode, slot) = match theme {
+-                Theme::Pro | Theme::ProMedium | Theme::Studio | Theme::SolarizedDark | Theme::AdwaitaDark | Theme::BreezeDark | Theme::SoftDark => {
++                Theme::Pro | Theme::ProMedium | Theme::Studio | Theme::SolarizedDark | Theme::AdwaitaDark | Theme::BreezeDark | Theme::SoftDark | Theme::ArkuiDark | Theme::ArkuiProDark => {
+                     ("dark", "darkTheme")
+                 }
+-                Theme::StudioLight | Theme::ProLightGray | Theme::ProLight | Theme::Classic | Theme::Adwaita | Theme::BreezeLight | Theme::SoftLight => {
++                Theme::StudioLight | Theme::ProLightGray | Theme::ProLight | Theme::Classic | Theme::Adwaita | Theme::BreezeLight | Theme::SoftLight | Theme::ArkuiLight | Theme::ArkuiProLight => {
+                     ("light", "lightTheme")
+                 }
+             };
+@@ -1533,6 +1562,22 @@ impl Session {
+                     next.interface.light_theme = LightTheme::SoftLight;
+                     next.interface.appearance_mode = AppearanceMode::Light;
+                 }
++                Theme::ArkuiLight => {
++                    next.interface.light_theme = LightTheme::ArkuiLight;
++                    next.interface.appearance_mode = AppearanceMode::Light;
++                }
++                Theme::ArkuiDark => {
++                    next.interface.dark_theme = DarkTheme::ArkuiDark;
++                    next.interface.appearance_mode = AppearanceMode::Dark;
++                }
++                Theme::ArkuiProLight => {
++                    next.interface.light_theme = LightTheme::ArkuiProLight;
++                    next.interface.appearance_mode = AppearanceMode::Light;
++                }
++                Theme::ArkuiProDark => {
++                    next.interface.dark_theme = DarkTheme::ArkuiProDark;
++                    next.interface.appearance_mode = AppearanceMode::Dark;
++                }
+             }
+         }
+         self.prefs.edit(|p| *p = next);
+diff --git a/upstream/photocraft/crates/engine/src/prefs/validate.rs b/upstream/photocraft/crates/engine/src/prefs/validate.rs
+index 37d0fdf02240c6de8253c62521647c2c8ee1aebe..591ed32d2cc92d3b0c1037df67d65355916a4e6e 100644
+--- a/upstream/photocraft/crates/engine/src/prefs/validate.rs
++++ b/upstream/photocraft/crates/engine/src/prefs/validate.rs
+@@ -2,8 +2,8 @@ use super::shortcuts::normalize_shortcut;
+ use super::{
+     AppearanceMode, Ask, CanvasBorder, CanvasColor, CheckerColors, CheckerSize, ColorPicker, DarkTheme, ExportLocation, ExportMetadata, FontPreview,
+     GpuBackend, Interpolation, LightTheme, LineStyle, LinuxDisplayServer, LogDestination, LogDetail, OtherCursor, PaintingCursor, PointSize, PressureCurve,
+-    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, TextEngine, Theme, TypeUnit, UiFontSize, UiScale,
+-    Unit, Value,
++    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, StylusDoubleTap, StylusLongPress,
++    TextEngine, Theme, TypeUnit, UiFontSize, UiScale, Unit, Value,
+ };
+ 
+ /// Preferences dialog sections in Photoshop's order: (id, title).
+@@ -49,13 +49,27 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
+     "enhancedControls.scrubbySliderAcceleration",
+ ];
+ 
++/// Desktop Linux (X11/Wayland). HarmonyOS / OHOS builds must not show this preference.
++/// Official OHOS triples (`*-linux-ohos`) still report `target_os = "linux"`; gate on
++/// `target_env = "ohos"` instead (same style as wasm's `target_arch = "wasm32"`). Cross-compile
++/// HarmonyOS HAP Rust with an ohos triple so this cfg is true.
++pub const fn is_desktop_linux() -> bool {
++    cfg!(all(target_os = "linux", not(target_env = "ohos")))
++}
++
+ /// Is the preference at `path` (`"section.key"`) hidden from the Preferences dialog?
+ pub fn is_hidden(path: &str) -> bool {
+-    HIDDEN_UNTIL_IMPLEMENTED.contains(&path) || (!cfg!(target_os = "linux") && LINUX_ONLY.contains(&path))
++    is_hidden_for(path, is_desktop_linux())
++}
++
++/// Same as [`is_hidden`], with an explicit desktop-Linux flag so OHOS/non-Linux behaviour can
++/// be unit-tested on any host.
++pub fn is_hidden_for(path: &str, desktop_linux: bool) -> bool {
++    HIDDEN_UNTIL_IMPLEMENTED.contains(&path) || (!desktop_linux && LINUX_ONLY.contains(&path))
+ }
+ 
+-/// Preferences that only do something on Linux; the dialog doesn't show them elsewhere. They
+-/// still load, save and round-trip on every platform.
++/// Preferences that only do something on desktop Linux; the dialog doesn't show them on
++/// Windows, macOS, wasm, or OHOS/HarmonyOS. They still load, save and round-trip everywhere.
+ pub const LINUX_ONLY: &[&str] = &["performance.linuxDisplayServer", "performance.gpuAdapter"];
+ 
+ /// Whether a graphics adapter called `name` is the one `performance.gpuAdapter` (`wanted`) asks
+@@ -89,6 +103,8 @@ pub fn choices(path: &str) -> Option<&'static [&'static str]> {
+         "cursors.painting" => PaintingCursor::NAMES,
+         "cursors.other" => OtherCursor::NAMES,
+         "tools.rightClickWithPaintingTools" => RightClickPaint::NAMES,
++        "tools.stylusDoubleTap" => StylusDoubleTap::NAMES,
++        "tools.stylusLongPress" => StylusLongPress::NAMES,
+         "transparencyAndGamut.gridSize" => CheckerSize::NAMES,
+         "transparencyAndGamut.gridColors" => CheckerColors::NAMES,
+         "unitsAndRulers.rulers" | "guidesGridAndSlices.gridUnit" => Unit::NAMES,
+diff --git a/upstream/photocraft/crates/format/src/atomic.rs b/upstream/photocraft/crates/format/src/atomic.rs
+index 8cd349efff8c8c4665c075756f71b0f35d126d9a..8b8aafe52632632e07b4a55043fbe1b72e6e44d9 100644
+--- a/upstream/photocraft/crates/format/src/atomic.rs
++++ b/upstream/photocraft/crates/format/src/atomic.rs
+@@ -22,6 +22,10 @@
+ //!   (`F_FULLFSYNC`), which SMB shares and some virtual file systems refuse while a plain `fsync`
+ //!   works. [`sync_file`] falls back to the plain one there (#1336).
+ //!
++//! On HarmonyOS, a registered host writer publishes public document paths through CoreFileKit
++//! after staging complete bytes in the private sandbox. Public folders do not support POSIX
++//! rename/unlink. Private paths retain the atomic replacement described above.
++//!
+ //! On the web there is no file system: writes go through the platform services (downloads), so
+ //! this module is never reached there; on `wasm32` every call returns the `std` "unsupported"
+ //! error.
+@@ -39,6 +43,20 @@ use std::io::{self, Write};
+ use std::path::{Path, PathBuf};
+ use std::sync::atomic::{AtomicU64, Ordering};
+ 
++/// A sandboxed platform can publish completed bytes through its permission bridge.
++/// Return `None` for private paths where ordinary atomic replacement is supported.
++#[cfg(target_env = "ohos")]
++pub type HostWriter = fn(&Path, &[u8]) -> Option<io::Result<()>>;
++#[cfg(target_env = "ohos")]
++static HOST_WRITER: std::sync::OnceLock<HostWriter> = std::sync::OnceLock::new();
++
++/// Install before starting engine jobs. The callback must wait for publication to finish;
++/// errors must not fall back to a POSIX rename in a public document directory.
++#[cfg(target_env = "ohos")]
++pub fn set_host_writer(writer: HostWriter) {
++    let _ = HOST_WRITER.set(writer);
++}
++
+ /// The file-system steps [`atomic_write_with`] performs. [`RealFs`] is the real thing; tests
+ /// wrap it to inject failures.
+ pub trait AtomicFs {
+@@ -191,12 +209,18 @@ impl RenameRetry {
+ /// Errors keep their [`io::ErrorKind`]. Before replacement they say the original is unchanged;
+ /// a Windows publication-flush error says the new file may not survive a power loss.
+ pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
+-    atomic_write_with(&RealFs, RenameRetry::platform(), path, bytes)
++    atomic_write_progress(path, bytes, &|_| {})
+ }
+ 
+ /// [`atomic_write`] reporting the fraction of `bytes` written to `progress` as it goes (a save's
+ /// progress bar, #3389); the flush and rename follow the last report.
+ pub fn atomic_write_progress(path: &Path, bytes: &[u8], progress: &dyn Fn(f32)) -> io::Result<()> {
++    #[cfg(target_env = "ohos")]
++    if let Some(result) = HOST_WRITER.get().and_then(|write| write(path, bytes)) {
++        result?;
++        progress(1.0);
++        return Ok(());
++    }
+     atomic_write_with_progress(&RealFs, RenameRetry::platform(), path, bytes, progress)
+ }
+ 
+diff --git a/upstream/photocraft/crates/text/src/cjk.rs b/upstream/photocraft/crates/text/src/cjk.rs
+index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e938a26f33 100644
+--- a/upstream/photocraft/crates/text/src/cjk.rs
++++ b/upstream/photocraft/crates/text/src/cjk.rs
+@@ -106,11 +106,25 @@ pub fn ui_locale() -> Option<&'static str> {
+     LOCALE.get_or_init(detect_locale).as_deref()
+ }
+ 
+-/// [`script_order`] for [`ui_locale`].
++// Process-wide, like [`ui_locale`]'s cache. The web shell sets it from the UI language because a
++// browser has no `LANG`. Empty means "use the OS locale".
++static UI_LOCALE_OVERRIDE: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
++
++/// [`script_order`] for [`ui_locale`], unless [`set_ui_locale`] supplied a tag.
+ pub fn ui_script_order() -> [CjkScript; 4] {
++    let override_tag = UI_LOCALE_OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()).clone();
++    if let Some(tag) = override_tag {
++        return script_order(Some(&tag));
++    }
+     script_order(ui_locale())
+ }
+ 
++/// Prefer `tag` over the OS locale for [`ui_script_order`]. `None` or whitespace clears it.
++pub fn set_ui_locale(tag: Option<&str>) {
++    let next = tag.map(str::trim).filter(|tag| !tag.is_empty()).map(str::to_owned);
++    *UI_LOCALE_OVERRIDE.lock().unwrap_or_else(|e| e.into_inner()) = next;
++}
++
+ fn detect_locale() -> Option<String> {
+     let env = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && v != "C" && v != "POSIX" && !v.starts_with("C."));
+     if let Some(v) = env("PHOTOCRAFT_LOCALE") {
+@@ -227,10 +241,20 @@ pub fn bplist_first_language(b: &[u8]) -> Option<String> {
+ pub fn families(script: CjkScript) -> &'static [&'static str] {
+     match script {
+         CjkScript::Japanese => &["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic"],
+-        CjkScript::SimplifiedChinese => {
+-            &["PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "Heiti SC"]
++        CjkScript::SimplifiedChinese => &[
++            "HarmonyOS Sans SC",
++            "PingFang SC",
++            "Hiragino Sans GB",
++            "Microsoft YaHei",
++            "Noto Sans CJK SC",
++            "Noto Sans SC",
++            "WenQuanYi Micro Hei",
++            "WenQuanYi Zen Hei",
++            "Heiti SC",
++        ],
++        CjkScript::TraditionalChinese => {
++            &["HarmonyOS Sans TC", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Hiragino Sans CNS", "Heiti TC"]
+         }
+-        CjkScript::TraditionalChinese => &["PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC", "Noto Sans TC", "Hiragino Sans CNS", "Heiti TC"],
+         CjkScript::Korean => &["Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic", "UnDotum"],
+     }
+ }
+@@ -700,9 +724,11 @@ mod tests {
+         assert!(pos(&ja, "Hiragino Sans") < pos(&ja, "PingFang SC"));
+         assert!(pos(&ja, "Noto Sans CJK JP") < pos(&ja, "Noto Sans CJK SC"));
+         let sc = crate::fonts::fallback_candidates(&script_order(Some("zh_CN")));
++        assert!(pos(&sc, "HarmonyOS Sans SC") < pos(&sc, "PingFang SC"));
+         assert!(pos(&sc, "PingFang SC") < pos(&sc, "Hiragino Sans"));
+         assert!(pos(&sc, "Microsoft YaHei") < pos(&sc, "Microsoft JhengHei"));
+         let tc = crate::fonts::fallback_candidates(&script_order(Some("zh-Hant")));
++        assert!(pos(&tc, "HarmonyOS Sans TC") < pos(&tc, "PingFang TC"));
+         assert!(pos(&tc, "PingFang TC") < pos(&tc, "PingFang SC"));
+         let ko = crate::fonts::fallback_candidates(&script_order(Some("ko")));
+         assert!(pos(&ko, "Apple SD Gothic Neo") < pos(&ko, "PingFang SC"));
+@@ -714,6 +740,26 @@ mod tests {
+         }
+     }
+ 
++    #[test]
++    fn ui_locale_override_changes_script_order_and_restores() {
++        struct Restore;
++        impl Drop for Restore {
++            fn drop(&mut self) {
++                set_ui_locale(None);
++            }
++        }
++        let _restore = Restore;
++        let previous = ui_script_order();
++        set_ui_locale(Some("zh-Hant-TW"));
++        assert_eq!(ui_script_order()[0], TraditionalChinese);
++        set_ui_locale(Some("  "));
++        assert_eq!(ui_script_order(), previous);
++        set_ui_locale(Some("ja"));
++        assert_eq!(ui_script_order()[0], Japanese);
++        set_ui_locale(None);
++        assert_eq!(ui_script_order(), previous);
++    }
++
+     #[test]
+     fn classify_chars() {
+         let order = script_order(Some("en"));
+diff --git a/upstream/photocraft/crates/ui-egui/src/i18n.rs b/upstream/photocraft/crates/ui-egui/src/i18n.rs
+index a8fa5c2bcf6532abd5fca9df58b647b261232235..15712638dd4aebbb0ce259e8a80421091548d396 100644
+--- a/upstream/photocraft/crates/ui-egui/src/i18n.rs
++++ b/upstream/photocraft/crates/ui-egui/src/i18n.rs
+@@ -27,6 +27,11 @@ mod system;
+ pub(crate) use system::with_decimal_separator;
+ pub use system::{decimal_separator, system_lang};
+ 
++/// Supply the system locale for an embedded native host before its first frame.
++pub fn set_host_locale(tag: &str) {
++    system::set_host_locale(tag);
++}
++
+ use std::cell::Cell;
+ use std::sync::OnceLock;
+ 
 diff --git a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs b/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
 index b2bef186e99d191d51ceb61b0e23d712aa7c5b26..8fdcccf10d0c73fec3903123b0bc1640ce7b6697 100644
 --- a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs

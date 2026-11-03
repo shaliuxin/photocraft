@@ -1,8 +1,16 @@
 diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
-index 993ae9bcdfc57bdb2ca24c11cdb8c90664a04623..d44634cf9897a7a49b822439a61e3b75dfd8b65f 100644
+index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd952dca0988 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app.rs
-@@ -91,6 +91,8 @@ impl PhotocraftApp {
+@@ -15,6 +15,7 @@ mod control;
+ mod files;
+ mod frame;
+ mod gpu;
++mod host;
+ mod ime;
+ mod input;
+ mod prefs;
+@@ -90,6 +91,8 @@ impl PhotocraftApp {
              styled: false,
              integrated_titlebar: false,
              custom_titlebar: false,
@@ -11,6 +19,76 @@ index 993ae9bcdfc57bdb2ca24c11cdb8c90664a04623..d44634cf9897a7a49b822439a61e3b75
              last_window_title: String::new(),
              fonts_ready: false,
              last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
+@@ -217,61 +220,26 @@ impl PhotocraftApp {
+     }
+ }
+ 
++/// The desktop window. Every body here is the host-facing method of the same name (`host.rs`),
++/// with the frame this toolkit hands over; a shell without eframe calls those methods directly
++/// and this impl is not compiled at all.
++#[cfg(feature = "eframe-host")]
+ impl eframe::App for PhotocraftApp {
+     fn on_exit(&mut self) {
+-        if let Err(err) = tool_memory::save_on_exit(self) {
+-            log::warn!("Preferences: could not save the final tool selection: {err}");
+-        }
+-        // Release a pending screenshot's image budget and answer its control request; the
+-        // callback is inert afterwards (it holds only a weak slot).
+-        let finished = self.captures.cancel_all("the application is closing");
+-        self.finish_captures(finished);
++        self.host_exit();
+     }
+ 
+     fn logic(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+-        self.logic_frame(ctx, frame);
++        self.logic_frame(ctx, Some(frame));
+         self.finish_type_reset_logic(ctx);
+     }
+ 
+     fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+-        let frame_start = gpu_canvas::now_ms();
+-        // An undecorated window gets its caption back when the toolkit changes its flags
+-        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
+-        if let Some(window_frame) = self.services.window_frame.as_mut() {
+-            window_frame();
+-        }
+-        // Native menu key equivalents become the key presses they were (see `native_menu`).
+-        if let Some(menu) = self.services.native_menu.as_mut() {
+-            menu.raw_input(raw_input);
+-        }
+-        // While a text field of a floating panel's own window has the keyboard, the dock area
+-        // hands that window the text keys in this input and converts them there.
+-        if craft_ui::docking::typing_window(ctx).is_none() {
+-            shortcuts::clipboard_keys(ctx, ctx.text_edit_focused() || self.ui.text_edit.is_some(), raw_input);
+-        }
+-        // Windows precision touchpads and some Linux Wayland compositors send pinches
+-        // as fractional Ctrl + wheel rather than a native Zoom event (#4566).
+-        // Leave Ctrl+whole-notch mouse scrolling alone, and honour the pinch preference.
+-        if cfg!(any(target_os = "windows", target_os = "linux")) && self.session.prefs().enhanced_controls.zoom_with_trackpad_pinch {
+-            wheel_nav::fold_legacy_pinch(ctx, raw_input);
+-        }
+-        self.inject_synthetic(ctx, raw_input);
+-        // After the control channel's own events (`ui.type`) join the OS's, before any widget.
+-        widgets::cap_text_events(&mut raw_input.events);
+-        self.control_click.normalize(&mut raw_input.events, cfg!(target_os = "macos"));
+-        // A pen held still is no touch screen's press-and-hold right click (stylus.rs).
+-        let pen_down = self.stylus.pen_contacts.observe(&raw_input.events);
+-        stylus::pen_hold_is_no_right_click(ctx, pen_down);
+-        if self.custom_titlebar {
+-            titlebar::release_after_os_resize(ctx, raw_input);
+-        }
+-        // The OS's moves and the control channel's (injected just above).
+-        let moves = raw_input.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).count();
+-        self.perf.stage.start(frame_start, moves);
++        self.host_input(ctx, raw_input);
+     }
+ 
+     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+-        self.ui_frame(ui, frame);
++        self.ui_frame(ui, Some(frame));
+         self.finish_type_reset_pass(ui.ctx());
+     }
+ }
 diff --git a/upstream/photocraft/crates/ui-egui/src/canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas.rs
 index 12b4a8a766af53b94dd3ceadb589eae46f45f975..d86d35662b0170eae82238a87c0f3f9e4e9d8375 100644
 --- a/upstream/photocraft/crates/ui-egui/src/canvas.rs
@@ -27,10 +105,29 @@ index 12b4a8a766af53b94dd3ceadb589eae46f45f975..d86d35662b0170eae82238a87c0f3f9e
  pub(crate) mod background_redraw;
  pub(crate) mod cam_preview;
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
-index b90a6bf653a4bc077708c8b61427bd2f624b6b59..d779b517b9738e1835a11d6b2bbb2689037e1c2c 100644
+index bddc6796d3d255986e0ca4a700761b9f238a5858..d779b517b9738e1835a11d6b2bbb2689037e1c2c 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
-@@ -100,6 +100,14 @@ pub(crate) struct Pending {
+@@ -67,9 +67,17 @@ impl FileDialogReply {
+     }
+ }
+ 
++/// The window a dialog is parented to. On the desktop that is eframe's; a host that owns its
++/// own window has no such handle, so the type is the unit and `None` reaches it the same way
++/// tests do — the dialog is then the shell's own (a system sheet on HarmonyOS).
++#[cfg(feature = "eframe-host")]
++pub type ParentFrame = eframe::Frame;
++#[cfg(not(feature = "eframe-host"))]
++pub type ParentFrame = ();
++
+ /// Show a file dialog and return at once, answering through the reply when the user is done.
+ /// The window (`None` in tests) is the dialog's parent.
+-pub type FileDialogFn = Box<dyn FnMut(FileDialogRequest, Option<&eframe::Frame>, FileDialogReply)>;
++pub type FileDialogFn = Box<dyn FnMut(FileDialogRequest, Option<&ParentFrame>, FileDialogReply)>;
+ 
+ /// What to do with the answer (`None`: cancelled).
+ type Then = Box<dyn FnOnce(&mut PhotocraftApp, Option<FileDialogAnswer>) -> Result<Value, String>>;
+@@ -92,6 +100,14 @@ pub(crate) struct Pending {
  
  /// The error of a cancelled dialog: not reported, since backing out is the user's choice.
  pub(crate) const CANCELLED: &str = "cancelled";
@@ -45,7 +142,7 @@ index b90a6bf653a4bc077708c8b61427bd2f624b6b59..d779b517b9738e1835a11d6b2bbb2689
  const UNEXPECTED: &str = "the file dialog gave an unexpected answer";
  
  impl PhotocraftApp {
-@@ -117,7 +125,38 @@ impl PhotocraftApp {
+@@ -109,7 +125,38 @@ impl PhotocraftApp {
          then: impl FnOnce(&mut Self, FileDialogAnswer) -> Result<Value, String> + 'static,
      ) -> Result<Value, String> {
          if self.services.file_dialog.is_none() {
@@ -85,7 +182,7 @@ index b90a6bf653a4bc077708c8b61427bd2f624b6b59..d779b517b9738e1835a11d6b2bbb2689
          }
          if self.file_dialog.is_some() {
              return Err("a file dialog is already open".into());
-@@ -146,6 +185,16 @@ impl PhotocraftApp {
+@@ -138,6 +185,16 @@ impl PhotocraftApp {
          })
      }
  
@@ -102,6 +199,15 @@ index b90a6bf653a4bc077708c8b61427bd2f624b6b59..d779b517b9738e1835a11d6b2bbb2689
      /// Ask where to save: `then` gets the chosen path, with a lowercase extension when
      /// Preferences ▸ File Handling › Lowercase Extension is on (its default). When that, or the
      /// extension added to a bare name, changes the path to one where a file exists, the app asks
+@@ -307,7 +364,7 @@ impl PhotocraftApp {
+ 
+     /// Called every frame: shows a queued dialog with `parent` (the window) as its parent, and
+     /// continues the action that asked once the answer is in. Its errors go to the status bar.
+-    pub fn poll_file_dialog(&mut self, ctx: &egui::Context, parent: Option<&eframe::Frame>) {
++    pub fn poll_file_dialog(&mut self, ctx: &egui::Context, parent: Option<&ParentFrame>) {
+         let Some(p) = self.file_dialog.as_mut() else { return };
+         if p.held.is_some() {
+             // The question whether to replace answers through `answer_replace`. Closed without an
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_open.rs b/upstream/photocraft/crates/ui-egui/src/file_open.rs
 index 65c1fb57581cfd8dab24fb575d53aafaaecd23f2..3b1860b8a6046197dd66593083fe22672cd28423 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_open.rs
@@ -116,9 +222,18 @@ index 65c1fb57581cfd8dab24fb575d53aafaaecd23f2..3b1860b8a6046197dd66593083fe2267
              return DropTarget::Elsewhere;
          };
 diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
-index 4378ae4666ecda3e57769f08c111a08ddaa082cc..4dda824ec765ec4ea5fd38ba1332fbe170d986e5 100644
+index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115dc7b3769 100644
 --- a/upstream/photocraft/crates/ui-egui/src/lib.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
+@@ -11,7 +11,7 @@
+ 
+ /// PhotoCraft as craft-update knows it, with its 128 px icon and accent colour: the update
+ /// prompt shows both, and an AppImage's menu entry gets the icon.
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ pub const UPDATE_APP: craft_update::app::App = craft_update::app::App {
+     icon_png: Some(include_bytes!("../../../assets/app-icon/hicolor/128x128/apps/ai.storyteller.photocraft.png")),
+     accent: Some([0x2f, 0x7b, 0xf5]),
 @@ -27,6 +27,8 @@ macro_rules! tl {
  mod brush_mode_menu;
  pub mod canvas;
@@ -141,6 +256,24 @@ index 4378ae4666ecda3e57769f08c111a08ddaa082cc..4dda824ec765ec4ea5fd38ba1332fbe1
      /// Last window title sent to the OS (`ViewportCommand::Title`, see `panels::sync_window_title`):
      /// sent again only when it changes, so idle frames don't spam the backend.
      last_window_title: String,
+@@ -642,7 +650,7 @@ pub struct PhotocraftApp {
+     gpu: Option<gpu_canvas::GpuCanvas>,
+     /// The device the window itself draws with, and its health flag: the GPU canvas's, or one
+     /// watched for the CPU canvas (see `gpu_status::check_window`).
+-    window_device: Option<(eframe::wgpu::Device, photocraft_gpu::DeviceHealth)>,
++    window_device: Option<(wgpu::Device, photocraft_gpu::DeviceHealth)>,
+     /// That device was lost: frames draw nothing and the app closes once its work is saved (#3438).
+     window_lost: bool,
+     /// When (in `egui::InputState::time`) to try saving unsaved work for recovery again after a
+@@ -650,7 +658,7 @@ pub struct PhotocraftApp {
+     window_recovery_retry: Option<f64>,
+     /// The render state the GPU canvas was built on, kept after it is dropped so Retry GPU can
+     /// build a new one on the same device (see `gpu_status::choose_recovery`, #6577).
+-    gpu_render_state: Option<eframe::egui_wgpu::RenderState>,
++    gpu_render_state: Option<egui_wgpu::RenderState>,
+     /// Why the GPU canvas was dropped (see `gpu_status::fall_back`).
+     gpu_fault: Option<photocraft_gpu::Fault>,
+     /// Out-of-memory errors this session after which the GPU canvas was rebuilt by itself (#6564).
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs b/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
 index b8d4791d80235d41df192b1e1ef07d3c333fc400..01e2af0a25b4a8321a42ca0bb36ef529a0233152 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
@@ -294,7 +427,7 @@ index 87405f606eb9595cea5947786b7a2f9d02df039e..ac120c7bdf4594204495d27aa03e63ee
      }
  }
 diff --git a/upstream/photocraft/crates/ui-egui/src/services.rs b/upstream/photocraft/crates/ui-egui/src/services.rs
-index 1bcaf89e328e3d90d81419c4b0dc77ec19495bda..9803b0dd1e177df31170bc62463ae1fe7b9fc6c4 100644
+index d770d4a601074c8d5964f8929ad8768c8eb9b50a..b91b556e12cedc0c90944c6498d871fd19c92bda 100644
 --- a/upstream/photocraft/crates/ui-egui/src/services.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/services.rs
 @@ -184,6 +184,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
@@ -317,7 +450,7 @@ index 1bcaf89e328e3d90d81419c4b0dc77ec19495bda..9803b0dd1e177df31170bc62463ae1fe
  pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
  
  /// What a file on disk looked like when a document last read or wrote it: File › Save asks
-@@ -374,6 +387,38 @@ pub struct Services {
+@@ -377,6 +390,38 @@ pub struct Services {
      pub open_external_svg: Option<OpenExternalSvgFn>,
      /// User-initiated desktop/browser pixel sampling.
      pub screen_pick: Option<screen_picker::Service>,
