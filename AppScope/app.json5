@@ -3,7 +3,7 @@
     "bundleName": "io.github.shaliuxin.photocraft.hmos",
     "vendor": "photocraft-hmos",
     "versionCode": 200011,
-    "versionName": "0.20.1.1",
+    "versionName": "0.20.1",
     "icon": "$media:app_icon",
     "label": "$string:app_name"
   }

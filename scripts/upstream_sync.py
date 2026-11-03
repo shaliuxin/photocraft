@@ -219,30 +219,31 @@ def cmd_pins(args: argparse.Namespace) -> int:
 
 
 def cmd_versions(args: argparse.Namespace) -> int:
-    """versionName is <upstream major.minor.patch>.<hmos revision>; versionCode packs the same."""
+    """versionName mirrors the upstream photocraft version verbatim; versionCode is left untouched.
+
+    The hmos app tracks the upstream release: the displayed versionName is exactly the upstream
+    `version` from upstream/Cargo.toml, with no hmos revision suffix. versionCode is preserved —
+    HarmonyOS only requires it to grow across published builds, so it is managed separately rather
+    than packed from the version name.
+    """
     # The capture, not the whole line: `version = "0.18.0"` is not JSON.
     upstream_version = re.search(r'^version = "([^"]+)"', read(UPSTREAM / "Cargo.toml"), re.MULTILINE).group(1)
     current = app_version()
-    upstream_parts = [int(p) for p in upstream_version.split(".")[:3]]
-    current_parts = [int(p) for p in current.split(".")]
-    revision = current_parts[3] if len(current_parts) > 3 and current_parts[:3] == upstream_parts else 1
-    target = ".".join(str(p) for p in upstream_parts + [revision])
-    code = upstream_parts[0] * 1_000_000 + upstream_parts[1] * 10_000 + upstream_parts[2] * 100 + revision
+    target = upstream_version
     if target == current:
-        print(f"versions already at {target}")
+        print(f"version already at {target}")
         return 0
-    print(f"versionName {current} -> {target}, versionCode -> {code}")
+    print(f"versionName {current} -> {target} (versionCode preserved)")
     if not args.write:
         print("run with --write to apply")
         return 1
     app = json.loads(read(APP_JSON))
     app["app"]["versionName"] = target
-    app["app"]["versionCode"] = code
     write(APP_JSON, json.dumps(app, indent=2) + "\n")
     manifest = read(ADAPTER_MANIFEST)
     manifest = ADAPTER_MANIFEST_VERSION.sub(f'version = "{upstream_version}"', manifest, count=1)
     write(ADAPTER_MANIFEST, manifest)
-    print("updated AppScope/app.json5 and native/rust/Cargo.toml")
+    print("updated AppScope/app.json5 versionName and native/rust/Cargo.toml version")
     return 0
 
 
@@ -256,9 +257,9 @@ def cmd_check(args: argparse.Namespace) -> int:
             f"third_party/wgpu-hal-{pins['wgpu']} is missing: re-vendor the uniform-block fix for "
             "this wgpu version before building")
     upstream_version = re.search(r'^version = "([^"]+)"', read(UPSTREAM / "Cargo.toml"), re.MULTILINE).group(1)
-    if not app_version().startswith(upstream_version + "."):
+    if app_version() != upstream_version:
         failures.append(
-            f"AppScope versionName {app_version()} does not derive from upstream {upstream_version} "
+            f"AppScope versionName {app_version()} does not match upstream {upstream_version} "
             "(run: versions --write)")
     for method in ("abiFilters", "deviceTypes"):
         owners = ("entry/build-profile.json5",) if method == "abiFilters" else ("entry/src/main/module.json5",)
