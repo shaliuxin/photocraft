@@ -24,3 +24,5 @@ entry/.cxx/
 /work/
 __pycache__/
 *.pyc
+_build_native.log
+*.bak

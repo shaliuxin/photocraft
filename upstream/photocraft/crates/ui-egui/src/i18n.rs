@@ -25,7 +25,12 @@ mod system;
 
 #[cfg(test)]
 pub(crate) use system::with_decimal_separator;
-pub use system::{decimal_separator, system_lang, set_host_locale};
+pub use system::{decimal_separator, system_lang};
+
+/// Supply the system locale for an embedded native host before its first frame.
+pub fn set_host_locale(tag: &str) {
+    system::set_host_locale(tag);
+}
 
 use std::cell::Cell;
 use std::sync::OnceLock;
