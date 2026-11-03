@@ -262,6 +262,22 @@ mod tests {
     }
 
     #[test]
+    fn the_app_profile_folder_is_listed_and_a_refresh_rescans() {
+        let d = temp_dir("app");
+        set_app_profile_dir(Some(d.clone()));
+        assert!(profile_dirs().contains(&d));
+        let before = installed().len();
+        std::fs::write(d.join("imported.icc"), Builtin::Srgb.profile().to_bytes().as_slice()).unwrap();
+        refresh();
+        let after = installed();
+        set_app_profile_dir(None);
+        assert!(after.iter().any(|p| p.path.ends_with("imported.icc")), "{after:?}");
+        assert!(after.len() > before);
+        assert!(!profile_dirs().contains(&d));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
     fn scan_of_nothing_is_empty() {
         assert!(scan(&[]).is_empty());
         assert!(scan(&[PathBuf::from("/definitely/not/a/folder")]).is_empty());

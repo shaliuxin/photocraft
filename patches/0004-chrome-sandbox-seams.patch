@@ -1,5 +1,5 @@
 diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
-index 887f77f..f973295 100644
+index 993ae9bcdfc57bdb2ca24c11cdb8c90664a04623..d44634cf9897a7a49b822439a61e3b75dfd8b65f 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app.rs
 @@ -91,6 +91,8 @@ impl PhotocraftApp {
@@ -12,7 +12,7 @@ index 887f77f..f973295 100644
              fonts_ready: false,
              last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
 diff --git a/upstream/photocraft/crates/ui-egui/src/canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas.rs
-index da59b5a..c001205 100644
+index 12b4a8a766af53b94dd3ceadb589eae46f45f975..d86d35662b0170eae82238a87c0f3f9e4e9d8375 100644
 --- a/upstream/photocraft/crates/ui-egui/src/canvas.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/canvas.rs
 @@ -13,6 +13,10 @@ use crate::PhotocraftApp;
@@ -27,7 +27,7 @@ index da59b5a..c001205 100644
  pub(crate) mod background_redraw;
  pub(crate) mod cam_preview;
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
-index b90a6bf..d779b51 100644
+index b90a6bf653a4bc077708c8b61427bd2f624b6b59..d779b517b9738e1835a11d6b2bbb2689037e1c2c 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/file_dialog.rs
 @@ -100,6 +100,14 @@ pub(crate) struct Pending {
@@ -103,7 +103,7 @@ index b90a6bf..d779b51 100644
      /// Preferences ▸ File Handling › Lowercase Extension is on (its default). When that, or the
      /// extension added to a bare name, changes the path to one where a file exists, the app asks
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_open.rs b/upstream/photocraft/crates/ui-egui/src/file_open.rs
-index 65c1fb5..3b1860b 100644
+index 65c1fb57581cfd8dab24fb575d53aafaaecd23f2..3b1860b8a6046197dd66593083fe22672cd28423 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_open.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/file_open.rs
 @@ -268,7 +268,7 @@ impl PhotocraftApp {
@@ -116,10 +116,10 @@ index 65c1fb5..3b1860b 100644
              return DropTarget::Elsewhere;
          };
 diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
-index 946bf4a..1c49e7b 100644
+index 4378ae4666ecda3e57769f08c111a08ddaa082cc..4dda824ec765ec4ea5fd38ba1332fbe170d986e5 100644
 --- a/upstream/photocraft/crates/ui-egui/src/lib.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
-@@ -25,6 +25,8 @@ macro_rules! tl {
+@@ -27,6 +27,8 @@ macro_rules! tl {
  mod brush_mode_menu;
  pub mod canvas;
  pub mod control;
@@ -128,7 +128,7 @@ index 946bf4a..1c49e7b 100644
  pub mod dialogs;
  pub mod dock;
  pub mod file_dialog;
-@@ -445,6 +447,12 @@ pub struct PhotocraftApp {
+@@ -457,6 +459,12 @@ pub struct PhotocraftApp {
      /// Windows and Linux: the window has no OS decorations and the app's top bar is the title bar
      /// (caption buttons, window dragging and edge resizing, `titlebar`).
      pub custom_titlebar: bool,
@@ -142,10 +142,10 @@ index 946bf4a..1c49e7b 100644
      /// sent again only when it changes, so idle frames don't spam the backend.
      last_window_title: String,
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs b/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
-index 68af926..dcd5adb 100644
+index b8d4791d80235d41df192b1e1ef07d3c333fc400..01e2af0a25b4a8321a42ca0bb36ef529a0233152 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
-@@ -660,6 +660,14 @@ fn invoke_window_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str)
+@@ -669,6 +669,14 @@ fn invoke_window_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str)
              crate::prefs_ui::cycle_appearance(app, ctx);
              Some(Ok(Value::Null))
          }
@@ -161,7 +161,7 @@ index 68af926..dcd5adb 100644
              Some(crate::prefs_ui::step_brightness(app, ctx, id == "view.lightenInterface").map(|()| json!({"theme": app.ui.theme.id()})))
          }
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
-index 80e8d41..be7d9aa 100644
+index 80e8d41c88a1d7f002602ba04b6ad9b4e88f3686..be7d9aa88e0e81492297f118e70023eb4ca2aeb7 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
 @@ -347,6 +347,13 @@ fn run(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Res
@@ -179,7 +179,7 @@ index 80e8d41..be7d9aa 100644
          let (full_screen, maximized) = ctx.input(|i| (i.viewport().fullscreen.unwrap_or(false), i.viewport().maximized.unwrap_or(false)));
          let was_maximized = ctx.data(|d| d.get_temp::<bool>(was_maximized_id())).unwrap_or(false);
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
-index 3ef2ab1..1acd155 100644
+index 3ef2ab13fae17c8cece2f925bdc31a98806f7af2..1acd1552f5c7758defdd515e7cd4022df305efd8 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
 @@ -85,6 +85,34 @@ fn show_snap_extras_and_screen_modes_are_state() {
@@ -218,7 +218,7 @@ index 3ef2ab1..1acd155 100644
  fn full_screen_and_maximized_never_overlap_on_windows() {
      use egui::ViewportCommand::{Fullscreen, Maximized};
 diff --git a/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs b/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
-index 6586b98..a4d2a44 100644
+index fd760ec7111b249f2d3679f074f4988e63a6dbb2..df34223249d07e87e09aa58437c50f222b7814dd 100644
 --- a/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/panels/title_bar.rs
 @@ -13,6 +13,10 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
@@ -233,7 +233,7 @@ index 6586b98..a4d2a44 100644
          78
      } else if caption_left > 0.0 {
 diff --git a/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs b/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
-index 7cb98ae..7a59dd3 100644
+index 7cb98aec55632de57f080c81e1f8bb8f4b61c2f5..7a59dd3b9a796bf4a4be30a4d75ed6d202fa5354 100644
 --- a/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/panels/titlebar/tests.rs
 @@ -145,6 +145,33 @@ fn caption_buttons_take_the_right_end_and_nothing_overlaps_them() {
@@ -270,525 +270,8 @@ index 7cb98ae..7a59dd3 100644
  #[test]
  fn the_title_bar_promotes_no_community_chat() {
      // Issue #1726: only the always-visible title-bar button is removed. The start-screen
-diff --git a/upstream/photocraft/crates/ui-egui/src/path_pick.rs b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
-new file mode 100644
-index 0000000..978f019
---- /dev/null
-+++ b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
-@@ -0,0 +1,339 @@
-+//! Path fields on sandboxed hosts (HarmonyOS).
-+//!
-+//! A sandboxed app cannot read or write the user's files by path, so a typed path is useless
-+//! there. When the host sets [`crate::Services::path_pickers_only`], every field that takes a
-+//! file or folder path is drawn read-only, with a "Choose…" button beside it that opens the
-+//! system file manager. The answer fills the field:
-+//!
-+//! - a file the command reads is copied into the host's sandbox ([`crate::Services::sandbox_dir`],
-+//!   under `imports/`, `plugins/` or `icc/`) and the field names that copy;
-+//! - a folder is whatever path the host's folder picker answered (a folder the system granted
-+//!   the app, or one of the app's own folders).
-+//!
-+//! Other hosts keep the ordinary text field: [`locked_field`] draws nothing and returns `false`.
-+//!
-+//! The button only records a [`Request`] in egui memory; [`crate::dialogs::show`] starts it once
-+//! the dialog's fields are written back, so a picker answered within the frame (synchronous
-+//! hosts) isn't overwritten by the frame's copy of the fields.
-+
-+use std::path::{Path, PathBuf};
-+
-+use serde_json::{Map, Value, json};
-+
-+use crate::PhotocraftApp;
-+
-+/// What a path field takes.
-+#[derive(Clone, Debug, PartialEq, Eq)]
-+pub enum PickKind {
-+    /// A file the command reads (any extension when `extensions` is empty). Sandboxed hosts copy
-+    /// it under `stage`.
-+    File { extensions: Vec<String>, stage: Stage },
-+    /// A folder the command reads from.
-+    InputFolder,
-+    /// A folder the command writes into.
-+    OutputFolder,
-+    /// A file the command writes: its folder is chosen, the field's file name (else
-+    /// `default_name`) is kept.
-+    OutputFile { default_name: String },
-+    /// A folder of `*.wasm` plug-ins. Sandboxed hosts copy the plug-ins into `plugins/` and the
-+    /// field names that folder, so they still load after the folder grant has lapsed.
-+    PluginFolder,
-+}
-+
-+/// Where a picked file is copied in the sandbox.
-+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-+pub enum Stage {
-+    Imports,
-+    Plugins,
-+    Profiles,
-+}
-+
-+impl Stage {
-+    pub fn folder(self) -> &'static str {
-+        match self {
-+            Stage::Imports => "imports",
-+            Stage::Plugins => "plugins",
-+            Stage::Profiles => "icc",
-+        }
-+    }
-+}
-+
-+/// A "Choose…" click: the dialog field (a JSON pointer into the dialog's fields) to fill.
-+#[derive(Clone, Debug, PartialEq, Eq)]
-+pub struct Request {
-+    pub pointer: String,
-+    pub kind: PickKind,
-+}
-+
-+fn only_id() -> egui::Id {
-+    egui::Id::unique("photocraft-path-pickers-only")
-+}
-+
-+fn request_id() -> egui::Id {
-+    egui::Id::unique("photocraft-path-pick-request")
-+}
-+
-+/// Record, for this frame's widgets, whether path fields are picker-only.
-+pub fn publish(ctx: &egui::Context, on: bool) {
-+    ctx.data_mut(|d| d.insert_temp(only_id(), on));
-+}
-+
-+/// Whether path fields are picker-only (see [`publish`]).
-+pub fn pickers_only(ctx: &egui::Context) -> bool {
-+    ctx.data(|d| d.get_temp::<bool>(only_id())).unwrap_or(false)
-+}
-+
-+/// Ask for a picker for the field at `pointer` (started after the dialog is drawn).
-+pub fn request(ctx: &egui::Context, pointer: &str, kind: PickKind) {
-+    ctx.data_mut(|d| d.insert_temp(request_id(), Request { pointer: pointer.to_string(), kind }));
-+}
-+
-+/// The request recorded this frame, if any.
-+pub fn take_request(ctx: &egui::Context) -> Option<Request> {
-+    ctx.data_mut(|d| {
-+        let r = d.get_temp::<Request>(request_id());
-+        d.remove::<Request>(request_id());
-+        r
-+    })
-+}
-+
-+/// The "Choose…" button's label.
-+pub fn choose_label() -> &'static str {
-+    tl!("Choose…")
-+}
-+
-+/// Draws the picker-only version of a path field (a disabled field showing `value`, then a
-+/// "Choose…" button) and returns `true`, when path fields are picker-only and `kind` is a path
-+/// field. Otherwise draws nothing and returns `false`: the caller draws its ordinary field.
-+pub fn locked_field(ui: &mut egui::Ui, kind: Option<PickKind>, pointer: &str, value: &str, width: f32) -> bool {
-+    let Some(kind) = kind.filter(|_| pickers_only(ui.ctx())) else { return false };
-+    ui.horizontal(|ui| {
-+        let mut shown = value.to_string();
-+        ui.add_enabled(false, egui::TextEdit::singleline(&mut shown).desired_width((width - 70.0).max(80.0))).on_disabled_hover_text(value);
-+        if crate::widgets::secondary_button(ui, choose_label(), 64.0).clicked() {
-+            request(ui.ctx(), pointer, kind);
-+        }
-+    });
-+    true
-+}
-+
-+const IMAGE_EXTENSIONS: &[&str] = &["psd", "psb", "png", "jpg", "jpeg", "tif", "tiff", "webp", "bmp", "gif"];
-+
-+fn file(extensions: &[&str], stage: Stage) -> Option<PickKind> {
-+    Some(PickKind::File { extensions: extensions.iter().map(|e| (*e).to_string()).collect(), stage })
-+}
-+
-+/// The path field `key` of `command`'s dialog (`"prefs"` with a dotted preference path for
-+/// Preferences), or `None` when it isn't a path.
-+pub fn kind_for(command: &str, key: &str) -> Option<PickKind> {
-+    match (command, key) {
-+        ("plugin.install", "path") => file(&["wasm"], Stage::Plugins),
-+        ("plugin.reload", "path") | ("prefs", "plugIns.additionalPluginsFolder") => Some(PickKind::PluginFolder),
-+        ("prefs", "historyLog.filePath") => Some(PickKind::OutputFile { default_name: "PhotoCraft History Log.txt".into() }),
-+        ("filter.distort.displace", "mapPath") => file(&["psd", "psb"], Stage::Imports),
-+        (c, "file") if c.ends_with(".colorLookup") => file(&["cube", "3dl", "look"], Stage::Imports),
-+        ("image.variables", "pixelReplacement") => file(IMAGE_EXTENSIONS, Stage::Imports),
-+        // Input folders (batch / photography / contact sheet).
-+        (
-+            "file.automate.batch"
-+                | "file.scripts.imageProcessor"
-+                | "file.automate.lensCorrection"
-+                | "file.automate.contactSheetII",
-+            "input",
-+        ) => Some(PickKind::InputFolder),
-+        ("file.automate.photomerge" | "file.automate.mergeToHdrPro", "paths") => Some(PickKind::InputFolder),
-+        // Output folders (batch / export / package / droplet).
-+        (
-+            "file.automate.batch"
-+                | "file.scripts.imageProcessor"
-+                | "file.automate.lensCorrection"
-+                | "file.automate.createDroplet",
-+            "output",
-+        ) => Some(PickKind::OutputFolder),
-+        (
-+            "file.export.layersToFiles"
-+                | "file.export.layerCompsToFiles"
-+                | "file.export.artboardsToFiles"
-+                | "file.export.dataSetsAsFiles"
-+                | "file.package",
-+            "dir",
-+        ) => Some(PickKind::OutputFolder),
-+        // Output files kept under a chosen folder.
-+        ("file.export.artboardsToPdf", "path") => Some(PickKind::OutputFile { default_name: "Artboards.pdf".into() }),
-+        ("file.export.colorLookupTables", "path") => Some(PickKind::OutputFile { default_name: "Color Lookup.cube".into() }),
-+        ("file.export.pathsToIllustrator", "path") => Some(PickKind::OutputFile { default_name: "Paths.ai".into() }),
-+        ("file.automate.createDroplet", "path") => Some(PickKind::OutputFile { default_name: "Action.pcdroplet".into() }),
-+        _ => None,
-+    }
-+}
-+
-+/// Standard subfolders under the app's DOWNLOAD document directory (`~/Downloads/<bundle>`).
-+pub const OUTPUT_SUBDIRS: &[&str] = &["processed", "batch", "corrected", "exports", "droplet-output", "package"];
-+
-+/// The host's system-visible document folder (HarmonyOS DOWNLOAD), when set.
-+pub fn documents_root(app: &PhotocraftApp) -> Option<&str> {
-+    app.services.documents_dir.as_deref().filter(|s| !s.is_empty())
-+}
-+
-+/// Ensures `documents_dir/<sub>` exists and returns it. Falls back to the active document's
-+/// folder (desktop) or `"."` when the host has no document directory.
-+pub fn documents_output_dir(app: &PhotocraftApp, sub: &str) -> String {
-+    let root = documents_root(app).map(str::to_string).unwrap_or_else(|| {
-+        app.session
-+            .active()
-+            .and_then(|d| d.path.as_deref())
-+            .and_then(|p| p.rfind(['/', '\\']).map(|i| p[..i].to_string()))
-+            .unwrap_or_else(|| ".".into())
-+    });
-+    if sub.is_empty() {
-+        return root;
-+    }
-+    let dir = Path::new(&root).join(sub);
-+    if let Err(e) = std::fs::create_dir_all(&dir) {
-+        // Still return the intended path so the field shows where output should go.
-+        let _ = e;
-+    }
-+    dir.to_string_lossy().into_owned()
-+}
-+
-+/// Creates every [`OUTPUT_SUBDIRS`] entry under `root` (startup on HarmonyOS).
-+pub fn ensure_output_subdirs(root: &Path) {
-+    for sub in OUTPUT_SUBDIRS {
-+        let _ = std::fs::create_dir_all(root.join(sub));
-+    }
-+}
-+
-+/// A picked file's name reduced to a safe file name (no folders, no control characters).
-+pub fn safe_name(name: &str) -> String {
-+    let base = name.rsplit(['/', '\\']).next().unwrap_or("").trim();
-+    let clean: String = base.chars().map(|c| if c.is_control() || matches!(c, ':' | '*' | '?' | '"' | '<' | '>' | '|') { '_' } else { c }).collect();
-+    if clean.is_empty() || clean == "." || clean == ".." { "file".into() } else { clean }
-+}
-+
-+/// The sandbox folder for `stage` under `sandbox`, created if missing.
-+pub fn stage_dir(sandbox: &Path, stage: Stage) -> Result<PathBuf, String> {
-+    let dir = sandbox.join(stage.folder());
-+    std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-+    Ok(dir)
-+}
-+
-+/// Copies a picked file's bytes into the sandbox; the copy's path.
-+pub fn stage_bytes(sandbox: &Path, stage: Stage, name: &str, bytes: &[u8]) -> Result<String, String> {
-+    let path = stage_dir(sandbox, stage)?.join(safe_name(name));
-+    std::fs::write(&path, bytes).map_err(|e| format!("{}: {e}", path.display()))?;
-+    Ok(path.to_string_lossy().into_owned())
-+}
-+
-+/// Copies the `*.wasm` files of `from` into the sandbox's `plugins/`; that folder's path.
-+pub fn stage_plugins(sandbox: &Path, from: &Path) -> Result<String, String> {
-+    let dir = stage_dir(sandbox, Stage::Plugins)?;
-+    if from == dir {
-+        return Ok(dir.to_string_lossy().into_owned());
-+    }
-+    let entries = std::fs::read_dir(from).map_err(|e| format!("{}: {e}", from.display()))?;
-+    let mut copied = 0;
-+    for e in entries.flatten() {
-+        let p = e.path();
-+        if p.is_file() && p.extension().and_then(|x| x.to_str()).is_some_and(|x| x.eq_ignore_ascii_case("wasm")) {
-+            let name = p.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-+            std::fs::copy(&p, dir.join(safe_name(&name))).map_err(|e| format!("{}: {e}", p.display()))?;
-+            copied += 1;
-+        }
-+    }
-+    if copied == 0 {
-+        return Err(format!("{}: no .wasm plug-ins in this folder", from.display()));
-+    }
-+    Ok(dir.to_string_lossy().into_owned())
-+}
-+
-+/// Sets the dialog field at `pointer` (`/a/b/0/c`), creating the last key of an object.
-+pub fn set_pointer(fields: &mut Map<String, Value>, pointer: &str, value: Value) -> Result<(), String> {
-+    let mut root = Value::Object(std::mem::take(fields));
-+    let result = (|| {
-+        let (parent, last) = pointer.rsplit_once('/').ok_or("bad field pointer")?;
-+        let last = last.replace("~1", "/").replace("~0", "~");
-+        let slot = if parent.is_empty() { Some(&mut root) } else { root.pointer_mut(parent) };
-+        match slot {
-+            Some(Value::Object(o)) => {
-+                o.insert(last, value);
-+                Ok(())
-+            }
-+            Some(Value::Array(a)) => {
-+                let i: usize = last.parse().map_err(|_| "bad field pointer")?;
-+                *a.get_mut(i).ok_or("the field is gone")? = value;
-+                Ok(())
-+            }
-+            _ => Err("the field is gone".to_string()),
-+        }
-+    })();
-+    if let Value::Object(o) = root {
-+        *fields = o;
-+    }
-+    result
-+}
-+
-+fn fill(app: &mut PhotocraftApp, dialog: u64, pointer: &str, value: String) -> Result<Value, String> {
-+    let d = app.ui.dialog_mut(dialog).ok_or("the dialog was closed")?;
-+    set_pointer(&mut d.fields, pointer, json!(value))?;
-+    Ok(Value::Null)
-+}
-+
-+fn sandbox(app: &PhotocraftApp) -> Option<PathBuf> {
-+    app.services.sandbox_dir.as_deref().map(PathBuf::from)
-+}
-+
-+/// Shows the picker for `request` on dialog `dialog`; the answer fills the field. Errors (but
-+/// not Cancel) go to the status bar.
-+pub fn start(app: &mut PhotocraftApp, dialog: u64, request: Request) {
-+    let Request { pointer, kind } = request;
-+    let current = app
-+        .ui
-+        .dialogs
-+        .iter()
-+        .find(|d| d.id == dialog)
-+        .and_then(|d| Value::Object(d.fields.clone()).pointer(&pointer).and_then(Value::as_str).map(str::to_string));
-+    let result = match kind {
-+        PickKind::File { extensions, stage } => {
-+            let exts: Vec<&str> = extensions.iter().map(String::as_str).collect();
-+            app.pick_file_bytes_filtered(&exts, move |app, name, bytes| {
-+                let path = match sandbox(app) {
-+                    Some(root) => stage_bytes(&root, stage, &name, &bytes)?,
-+                    // Desktop: the name is the file's path.
-+                    None => name,
-+                };
-+                if stage == Stage::Profiles {
-+                    photocraft_engine::installed_profiles::refresh();
-+                }
-+                fill(app, dialog, &pointer, path)
-+            })
-+        }
-+        PickKind::InputFolder => app.ask_folder(move |app, path| fill(app, dialog, &pointer, path)),
-+        PickKind::OutputFolder => app.ask_output_folder(move |app, path| fill(app, dialog, &pointer, path)),
-+        PickKind::OutputFile { default_name } => {
-+            let name = current
-+                .as_deref()
-+                .and_then(|c| Path::new(c).file_name())
-+                .map(|n| n.to_string_lossy().into_owned())
-+                .filter(|n| !n.is_empty())
-+                .unwrap_or(default_name);
-+            app.ask_output_folder(move |app, dir| fill(app, dialog, &pointer, Path::new(&dir).join(&name).to_string_lossy().into_owned()))
-+        }
-+        PickKind::PluginFolder => app.ask_folder(move |app, dir| {
-+            let path = match sandbox(app) {
-+                Some(root) => stage_plugins(&root, Path::new(&dir))?,
-+                None => dir,
-+            };
-+            fill(app, dialog, &pointer, path)
-+        }),
-+    };
-+    if let Err(e) = result
-+        && e != crate::file_dialog::CANCELLED
-+    {
-+        app.ui.status = e;
-+        app.ui.status_error = true;
-+    }
-+}
-+
-+#[cfg(test)]
-+#[path = "path_pick_tests.rs"]
-+mod tests;
-diff --git a/upstream/photocraft/crates/ui-egui/src/path_pick_tests.rs b/upstream/photocraft/crates/ui-egui/src/path_pick_tests.rs
-new file mode 100644
-index 0000000..21c4d42
---- /dev/null
-+++ b/upstream/photocraft/crates/ui-egui/src/path_pick_tests.rs
-@@ -0,0 +1,166 @@
-+use super::*;
-+use crate::Services;
-+
-+fn temp(tag: &str) -> PathBuf {
-+    let dir = std::env::temp_dir().join(format!("photocraft-path-pick-{tag}-{}", std::process::id()));
-+    let _ = std::fs::remove_dir_all(&dir);
-+    std::fs::create_dir_all(&dir).unwrap();
-+    dir
-+}
-+
-+fn sandboxed(sandbox: &Path, services: Services) -> PhotocraftApp {
-+    PhotocraftApp::new(
-+        photocraft_engine::Session::new(),
-+        Services { path_pickers_only: true, sandbox_dir: Some(sandbox.to_string_lossy().into_owned()), ..services },
-+    )
-+}
-+
-+#[test]
-+fn path_fields_are_known_by_command_and_key() {
-+    assert_eq!(kind_for("plugin.install", "path"), file(&["wasm"], Stage::Plugins));
-+    assert_eq!(kind_for("prefs", "plugIns.additionalPluginsFolder"), Some(PickKind::PluginFolder));
-+    assert_eq!(kind_for("file.automate.batch", "input"), Some(PickKind::InputFolder));
-+    assert_eq!(kind_for("file.automate.batch", "output"), Some(PickKind::OutputFolder));
-+    assert_eq!(kind_for("file.export.layersToFiles", "dir"), Some(PickKind::OutputFolder));
-+    assert_eq!(kind_for("file.package", "dir"), Some(PickKind::OutputFolder));
-+    assert_eq!(kind_for("file.automate.contactSheetII", "input"), Some(PickKind::InputFolder));
-+    assert_eq!(kind_for("file.automate.createDroplet", "output"), Some(PickKind::OutputFolder));
-+    assert!(matches!(kind_for("file.export.artboardsToPdf", "path"), Some(PickKind::OutputFile { .. })));
-+    assert!(matches!(kind_for("file.export.pathsToIllustrator", "path"), Some(PickKind::OutputFile { .. })));
-+    assert!(matches!(kind_for("image.adjustments.colorLookup", "file"), Some(PickKind::File { .. })));
-+    // Not paths: names, prefixes, ordinary text.
-+    assert_eq!(kind_for("file.automate.batch", "naming"), None);
-+    assert_eq!(kind_for("file.export.layersToFiles", "prefix"), None);
-+    assert_eq!(kind_for("prefs", "interface.language"), None);
-+}
-+
-+#[test]
-+fn picked_names_lose_their_folders() {
-+    assert_eq!(safe_name("/storage/Users/a/b.wasm"), "b.wasm");
-+    assert_eq!(safe_name("..\\x?.icc"), "x_.icc");
-+    assert_eq!(safe_name(".."), "file");
-+    assert_eq!(safe_name(""), "file");
-+}
-+
-+#[test]
-+fn pointers_set_nested_fields_and_create_missing_keys() {
-+    let mut f = serde_json::from_value::<Map<String, Value>>(json!({"values": {"plugIns": {"a": 1}}, "list": [{"value": ""}]})).unwrap();
-+    set_pointer(&mut f, "/values/plugIns/additionalPluginsFolder", json!("/x")).unwrap();
-+    set_pointer(&mut f, "/list/0/value", json!("/y")).unwrap();
-+    set_pointer(&mut f, "/path", json!("/z")).unwrap();
-+    assert_eq!(f["values"]["plugIns"]["additionalPluginsFolder"], "/x");
-+    assert_eq!(f["values"]["plugIns"]["a"], 1);
-+    assert_eq!(f["list"][0]["value"], "/y");
-+    assert_eq!(f["path"], "/z");
-+    assert!(set_pointer(&mut f, "/gone/key", json!(1)).is_err());
-+    assert!(set_pointer(&mut f, "/list/3/value", json!(1)).is_err());
-+    assert_eq!(f["path"], "/z", "a failed set keeps the fields");
-+}
-+
-+#[test]
-+fn the_field_is_locked_only_on_picker_only_hosts() {
-+    let ctx = egui::Context::default();
-+    PhotocraftApp::setup_context(&ctx, Default::default());
-+    let mut drawn = Vec::new();
-+    for on in [false, true] {
-+        ctx.run_ui(Default::default(), |ui| {
-+            publish(ui.ctx(), on);
-+            drawn.push(locked_field(ui, kind_for("plugin.install", "path"), "/path", "", 270.0));
-+            // Not a path field: always the caller's own field.
-+            drawn.push(locked_field(ui, None, "/name", "", 270.0));
-+        })
-+        .textures_delta
-+        .clear();
-+    }
-+    assert_eq!(drawn, [false, false, true, false]);
-+}
-+
-+#[test]
-+fn a_picked_plugin_is_copied_into_the_sandbox() {
-+    let sandbox = temp("plugin");
-+    let mut app =
-+        sandboxed(&sandbox, Services { pick_open: Some(Box::new(|| Some(("/outside/Blur.wasm".into(), Ok(b"\0asm".to_vec()))))), ..Default::default() });
-+    let id = crate::filter_dialog::open(&mut app, "plugin.install").unwrap();
-+    start(&mut app, id, Request { pointer: "/path".into(), kind: kind_for("plugin.install", "path").unwrap() });
-+    let want = sandbox.join("plugins").join("Blur.wasm");
-+    assert_eq!(app.ui.dialog_mut(id).unwrap().fields["path"], json!(want.to_string_lossy()));
-+    assert_eq!(std::fs::read(&want).unwrap(), b"\0asm");
-+    assert!(!app.ui.status_error, "{}", app.ui.status);
-+}
-+
-+#[test]
-+fn folders_come_from_the_host_picker_with_their_purpose() {
-+    let sandbox = temp("folder");
-+    let asked = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
-+    let log = asked.clone();
-+    let mut app = sandboxed(
-+        &sandbox,
-+        Services {
-+            pick_folder: Some(Box::new(move |output| {
-+                log.borrow_mut().push(output);
-+                Some(Ok(if output { "/granted/out".into() } else { "/granted/in".into() }))
-+            })),
-+            ..Default::default()
-+        },
-+    );
-+    let id = app.ui.open_dialog(
-+        crate::state::DialogKind::Command,
-+        serde_json::from_value(json!({"__form": true, "input": "", "output": "", "path": "/old/Board.pdf"})).unwrap(),
-+    );
-+    start(&mut app, id, Request { pointer: "/input".into(), kind: PickKind::InputFolder });
-+    start(&mut app, id, Request { pointer: "/output".into(), kind: PickKind::OutputFolder });
-+    start(&mut app, id, Request { pointer: "/path".into(), kind: kind_for("file.export.artboardsToPdf", "path").unwrap() });
-+    let f = &app.ui.dialog_mut(id).unwrap().fields;
-+    assert_eq!(f["input"], "/granted/in");
-+    assert_eq!(f["output"], "/granted/out");
-+    assert_eq!(f["path"], json!(Path::new("/granted/out").join("Board.pdf").to_string_lossy()), "the file name is kept");
-+    assert_eq!(*asked.borrow(), [false, true, true]);
-+}
-+
-+#[test]
-+fn a_folder_picker_error_is_reported_and_cancel_is_not() {
-+    let sandbox = temp("folder-error");
-+    let mut answers = vec![None, Some(Err("this device can't choose folders".to_string()))].into_iter();
-+    let mut app = sandboxed(&sandbox, Services { pick_folder: Some(Box::new(move |_| answers.next().flatten())), ..Default::default() });
-+    let id = app.ui.open_dialog(crate::state::DialogKind::Command, serde_json::from_value(json!({"__form": true, "input": ""})).unwrap());
-+    start(&mut app, id, Request { pointer: "/input".into(), kind: PickKind::InputFolder });
-+    assert!(!app.ui.status_error);
-+    start(&mut app, id, Request { pointer: "/input".into(), kind: PickKind::InputFolder });
-+    assert!(app.ui.status_error);
-+    assert_eq!(app.ui.status, "this device can't choose folders");
-+    assert_eq!(app.ui.dialog_mut(id).unwrap().fields["input"], "");
-+}
-+
-+#[test]
-+fn a_plugin_folder_is_copied_into_the_sandbox() {
-+    let sandbox = temp("plugin-folder");
-+    let outside = temp("plugin-folder-outside");
-+    std::fs::write(outside.join("a.wasm"), b"a").unwrap();
-+    std::fs::write(outside.join("notes.txt"), b"n").unwrap();
-+    let from = outside.to_string_lossy().into_owned();
-+    let mut app = sandboxed(&sandbox, Services { pick_folder: Some(Box::new(move |_| Some(Ok(from.clone())))), ..Default::default() });
-+    let id =
-+        app.ui.open_dialog(crate::state::DialogKind::Command, serde_json::from_value(json!({"values": {"plugIns": {"additionalPluginsFolder": ""}}})).unwrap());
-+    start(&mut app, id, Request { pointer: "/values/plugIns/additionalPluginsFolder".into(), kind: PickKind::PluginFolder });
-+    let dir = sandbox.join("plugins");
-+    assert_eq!(app.ui.dialog_mut(id).unwrap().fields["values"]["plugIns"]["additionalPluginsFolder"], json!(dir.to_string_lossy()));
-+    assert!(dir.join("a.wasm").is_file());
-+    assert!(!dir.join("notes.txt").exists());
-+    // A folder without plug-ins says so.
-+    let empty = temp("plugin-folder-empty");
-+    assert!(stage_plugins(&sandbox, &empty).unwrap_err().contains("no .wasm"));
-+}
-+
-+#[test]
-+fn documents_output_dir_uses_host_documents_root() {
-+    let root = temp("docs-root");
-+    let mut app = sandboxed(&temp("unused-sandbox"), Services { documents_dir: Some(root.to_string_lossy().into_owned()), ..Default::default() });
-+    let processed = documents_output_dir(&app, "processed");
-+    assert_eq!(processed, root.join("processed").to_string_lossy());
-+    assert!(root.join("processed").is_dir());
-+    ensure_output_subdirs(&root);
-+    for sub in OUTPUT_SUBDIRS {
-+        assert!(root.join(sub).is_dir(), "{sub}");
-+    }
-+    let _ = &mut app;
-+}
 diff --git a/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs b/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
-index 87405f6..ac120c7 100644
+index 87405f606eb9595cea5947786b7a2f9d02df039e..ac120c7bdf4594204495d27aa03e63ee00f3ce20 100644
 --- a/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/prefs/prefs_ui/appearance.rs
 @@ -46,6 +46,10 @@ pub(super) fn selected_theme(interface: &prefs::Interface, system: Option<egui::
@@ -811,7 +294,7 @@ index 87405f6..ac120c7 100644
      }
  }
 diff --git a/upstream/photocraft/crates/ui-egui/src/services.rs b/upstream/photocraft/crates/ui-egui/src/services.rs
-index 53d3c2e..551a2b1 100644
+index 1bcaf89e328e3d90d81419c4b0dc77ec19495bda..9803b0dd1e177df31170bc62463ae1fe7b9fc6c4 100644
 --- a/upstream/photocraft/crates/ui-egui/src/services.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/services.rs
 @@ -184,6 +184,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
@@ -834,8 +317,8 @@ index 53d3c2e..551a2b1 100644
  pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
  
  /// What a file on disk looked like when a document last read or wrote it: File › Save asks
-@@ -325,6 +338,38 @@ pub type RightButtonDownFn = Box<dyn Fn() -> bool + Send + Sync>;
- pub struct Services {
+@@ -374,6 +387,38 @@ pub struct Services {
+     pub open_external_svg: Option<OpenExternalSvgFn>,
      /// User-initiated desktop/browser pixel sampling.
      pub screen_pick: Option<screen_picker::Service>,
 +    /// Optional host full screen (HarmonyOS system bars); `None` elsewhere (window_fullscreen).
@@ -874,7 +357,7 @@ index 53d3c2e..551a2b1 100644
      pub import: Option<ImportFn>,
      /// Encode a document for a file name (format chosen by extension).
 diff --git a/upstream/photocraft/crates/ui-egui/src/theme.rs b/upstream/photocraft/crates/ui-egui/src/theme.rs
-index 2c08f63..0cfcaa6 100644
+index 2c08f63faae4408ba53d5f9abaaf12bc192fdecf..0cfcaa6dc100378e2323a234b5422b1717edcc3e 100644
 --- a/upstream/photocraft/crates/ui-egui/src/theme.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/theme.rs
 @@ -130,6 +130,12 @@ impl ThemeKind {
@@ -890,118 +373,3 @@ index 2c08f63..0cfcaa6 100644
      pub fn next(self) -> Self {
          let i = Self::ALL.iter().position(|k| *k == self).unwrap_or(0);
          Self::ALL[(i + 1) % Self::ALL.len()]
-diff --git a/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs b/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs
-new file mode 100644
-index 0000000..73fe403
---- /dev/null
-+++ b/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs
-@@ -0,0 +1,109 @@
-+//! Optional host-window full screen (HarmonyOS system bars hidden). The host injects
-+//! [`WindowFullscreen`] through `Services`; without it nothing here is shown, so every other
-+//! platform is unchanged. The host owns the real window state: [`request`] only asks, and the host
-+//! reports the outcome (also when the system leaves full screen by itself) through `is_active`.
-+
-+use crate::{PhotocraftApp, i18n};
-+
-+/// Control-command id that toggles host full screen from a host or automation. The menu entry
-+/// point is Photoshop's View › Screen Mode (`F`), which routes here when a host offers it.
-+pub const COMMAND: &str = "window.fullscreen.toggle";
-+
-+pub struct WindowFullscreen {
-+    /// Whether the host window is currently full screen (read every frame; the host requests a
-+    /// repaint itself when the state changes).
-+    pub is_active: Box<dyn Fn() -> bool>,
-+    /// Ask the host to enter (`true`) or leave (`false`) full screen.
-+    pub request: Box<dyn Fn(bool)>,
-+}
-+
-+/// Whether the host offers full screen at all.
-+pub fn available(app: &PhotocraftApp) -> bool {
-+    app.services.window_fullscreen.is_some()
-+}
-+
-+/// The host window's current state; `false` without a host service.
-+pub fn active(app: &PhotocraftApp) -> bool {
-+    app.services.window_fullscreen.as_ref().is_some_and(|f| (f.is_active)())
-+}
-+
-+/// English label of the action the next click performs (translated when drawn).
-+pub fn label(active: bool) -> &'static str {
-+    if active { "Exit Full Screen" } else { "Enter Full Screen" }
-+}
-+
-+/// Toggle: ask the host for the opposite of its current state.
-+pub fn toggle(app: &PhotocraftApp) -> bool {
-+    let Some(f) = app.services.window_fullscreen.as_ref() else { return false };
-+    let target = !(f.is_active)();
-+    (f.request)(target);
-+    target
-+}
-+
-+/// The translated label, for tooltips and menu text.
-+pub fn tr_label(active: bool) -> String {
-+    i18n::tr(i18n::current(), label(active)).to_owned()
-+}
-+
-+/// Follow the state the host reports, without asking it again: the system can leave full screen on
-+/// its own (a gesture, a resize out of full screen) or refuse the request. Screen Mode is where the
-+/// chrome reads it from, so both stay in step.
-+pub fn adopt(app: &mut PhotocraftApp, ctx: &egui::Context, on: bool) {
-+    let full = app.ui.view.screen_mode != "standard";
-+    if full == on {
-+        return;
-+    }
-+    app.ui.view.screen_mode = if on { "fullScreen" } else { "standard" }.to_owned();
-+    // Tab's view of the chrome lasts only while in Full Screen Mode, as on the desktop.
-+    app.ui.panels.full_screen_chrome = false;
-+    ctx.request_repaint();
-+}
-+
-+#[cfg(test)]
-+mod tests {
-+    use super::*;
-+    use std::cell::Cell;
-+    use std::rc::Rc;
-+
-+    #[test]
-+    fn labels_follow_the_next_action() {
-+        assert_eq!(label(false), "Enter Full Screen");
-+        assert_eq!(label(true), "Exit Full Screen");
-+        // The label is translated for the interface language (English when a catalogue lacks it).
-+        assert_eq!(tr_label(false), i18n::tr(i18n::current(), "Enter Full Screen"));
-+    }
-+
-+    #[test]
-+    fn toggle_requests_the_opposite_of_the_host_state() {
-+        let state = Rc::new(Cell::new(false));
-+        let asked = Rc::new(Cell::new(None));
-+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
-+        assert!(!available(&app) && !toggle(&app));
-+        let (s, a) = (state.clone(), asked.clone());
-+        app.services.window_fullscreen = Some(WindowFullscreen { is_active: Box::new(move || s.get()), request: Box::new(move |on| a.set(Some(on))) });
-+        assert!(available(&app) && !active(&app));
-+        assert!(toggle(&app));
-+        assert_eq!(asked.get(), Some(true));
-+        state.set(true);
-+        assert!(active(&app) && !toggle(&app));
-+        assert_eq!(asked.get(), Some(false));
-+    }
-+
-+    #[test]
-+    fn adopt_mirrors_the_reported_state_without_asking_the_host() {
-+        let asked = Rc::new(Cell::new(0));
-+        let a = asked.clone();
-+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
-+        app.run("file.new", serde_json::json!({"width": 32, "height": 32})).unwrap();
-+        app.services.window_fullscreen =
-+            Some(WindowFullscreen { is_active: Box::new(|| false), request: Box::new(move |_| a.set(a.get() + 1)) });
-+        let ctx = egui::Context::default();
-+        assert_eq!(app.ui.view.screen_mode, "standard");
-+        // The system left full screen by itself: Screen Mode follows, and nothing is requested.
-+        adopt(&mut app, &ctx, true);
-+        assert_eq!(app.ui.view.screen_mode, "fullScreen");
-+        adopt(&mut app, &ctx, false);
-+        assert_eq!(app.ui.view.screen_mode, "standard");
-+        assert_eq!(asked.get(), 0);
-+    }
-+}

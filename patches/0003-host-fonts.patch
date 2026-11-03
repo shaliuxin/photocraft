@@ -1,5 +1,5 @@
 diff --git a/upstream/photocraft/crates/ui-egui/src/text/cjk_fonts.rs b/upstream/photocraft/crates/ui-egui/src/text/cjk_fonts.rs
-index b74edce..b5a8a0b 100644
+index b74edce8a2abcf26fb8d0f6aaf82ef9de59c3a30..b5a8a0bcec6f8a73f777148261bd0d1a42d2ecce 100644
 --- a/upstream/photocraft/crates/ui-egui/src/text/cjk_fonts.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/text/cjk_fonts.rs
 @@ -1012,6 +1012,83 @@ pub(crate) fn set_craft_font_scale(ctx: &egui::Context, scale: f32) {
