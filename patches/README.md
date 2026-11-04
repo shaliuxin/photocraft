@@ -9,7 +9,6 @@
 | `0003-host-fonts.patch` | 宿主字体：`text/cjk_fonts.rs` 的 `font_bytes_ok`、`store_host_cjk_font`、`reapply_host_fonts` | 77 增 / 1 文件 |
 | `0004-chrome-sandbox-seams.patch` | 沙箱与外观：`Services` 的 `pick_open`/`pick_import`/`pick_save`/`pick_folder`/`sandbox_dir`/`documents_dir`/`path_pickers_only`/`always_pick_save`/`default_save`、`ask_file` 同步直答、`window_fullscreen`、`host_titlebar`、`native_doc_windows`、`ThemeKind::chrome_css`，以及 `path_pick` 的 166 行单测；宿主全屏经 View › Screen Mode（`F`）请求 `Services::window_fullscreen`（不发 eframe 的视口命令），宿主回报的状态再用 `adopt` 映回 Screen Mode | 778 增 / 2 删 / 14 文件 |
 
-| `0005-brand-icon.patch` | 品牌图标反色：`assets/app-icon/hicolor/128x128/apps/ai.storyteller.photocraft.png` 的 RGB 反相（琥珀底 + 深蓝狐），alpha 保留；`brand.rs` 的 `include_bytes!` 与桌面 `icon_png` 共用此文件。二进制 `git diff --binary` 补丁，已在纯净树上验证逐像素一致 | 1 文件（二进制） |
 
 合计 1,382 增 / 111 删，34 个文件（37 个改动点：`app.rs`/`file_dialog.rs`/`lib.rs` 由 0001 与 0004 各改一次）。v0.16 的分叉是 7,620 行 / 114 个文件。
 
