@@ -26,3 +26,4 @@ __pycache__/
 *.pyc
 _build_native.log
 *.bak
+_icon_backup/
