@@ -2,7 +2,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 
 use egui_kittest::{Harness, kittest::Queryable};
-use photocraft_ui_egui::{PhotocraftApp, i18n};
+use photocraft_ui_egui::{PhotocraftApp, i18n, menu_keys};
 
 #[test]
 fn native_first_launch_follows_os_ui_preferences() {
@@ -23,5 +23,11 @@ fn native_first_launch_follows_os_ui_preferences() {
     h.run_steps(4);
     assert_eq!(h.state().session.prefs().interface.language, "auto");
     assert_eq!(i18n::current(), expected, "native language preferences: {tags:?}");
-    assert!(h.query_by_label(i18n::tr(expected, "File")).is_some(), "the first-launch menu must use the OS UI language");
+    // The File heading is shown through `menu_keys::localized`, which appends a Windows-style
+    // mnemonic suffix to labels with no typeable letter (e.g. "文件(F)", #5863). So query the
+    // exact label the bar draws for "File", not the bare translation (kittest's `query_by_label`
+    // is an exact match, so "文件" alone would never find "文件(F)").
+    let file_label = i18n::tr(expected, "File").to_string();
+    let (shown, _) = menu_keys::localized(&[file_label], &["File"], &[Some('F')]);
+    assert!(h.query_by_label(&shown[0]).is_some(), "the first-launch menu must use the OS UI language (File heading {shown:?})");
 }
