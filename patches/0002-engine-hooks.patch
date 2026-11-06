@@ -1,5 +1,5 @@
 diff --git a/upstream/photocraft/crates/engine/src/installed_profiles.rs b/upstream/photocraft/crates/engine/src/installed_profiles.rs
-index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..9c57100c48831151142ec289f455ed8f70609c5f 100644
+index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..3056c3eb4aff88e53d5eb2b6ac4391e48cb24648 100644
 --- a/upstream/photocraft/crates/engine/src/installed_profiles.rs
 +++ b/upstream/photocraft/crates/engine/src/installed_profiles.rs
 @@ -40,9 +40,29 @@ const MAX_FILES: usize = 1000;
@@ -65,26 +65,10 @@ index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..9c57100c48831151142ec289f455ed8f
      if let Some((at, list)) = cache.lock().unwrap_or_else(|e| e.into_inner()).as_ref()
          && at.elapsed() < FRESH
      {
-@@ -218,6 +245,38 @@ mod tests {
+@@ -218,6 +245,22 @@ mod tests {
          let _ = std::fs::remove_dir_all(&d);
      }
  
-+    #[test]
-+    fn the_app_profile_folder_is_listed_and_a_refresh_rescans() {
-+        let d = temp_dir("app");
-+        set_app_profile_dir(Some(d.clone()));
-+        assert!(profile_dirs().contains(&d));
-+        let before = installed().len();
-+        std::fs::write(d.join("imported.icc"), Builtin::Srgb.profile().to_bytes().as_slice()).unwrap();
-+        refresh();
-+        let after = installed();
-+        set_app_profile_dir(None);
-+        assert!(after.iter().any(|p| p.path.ends_with("imported.icc")), "{after:?}");
-+        assert!(after.len() > before);
-+        assert!(!profile_dirs().contains(&d));
-+        let _ = std::fs::remove_dir_all(&d);
-+    }
-+
 +    #[test]
 +    fn the_app_profile_folder_is_listed_and_a_refresh_rescans() {
 +        let d = temp_dir("app");
