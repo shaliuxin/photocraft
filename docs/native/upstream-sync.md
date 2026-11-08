@@ -87,6 +87,25 @@ Translation catalogs (`crates/ui-egui/src/i18n/*.tsv`) are the worst case: both 
 they conflict on nearly every release while carrying no logic. Overlaying them from the adapter
 removes that entire class.
 
+### Two traps hit on v0.20.1 → v0.21.0
+
+* **CRLF breaks `git apply --3way`.** A Windows checkout (`core.autocrlf=true`) hands `git apply`
+  files with CRLF while the patches are LF. Every hunk then reports `patch failed` /
+  `Falling back to direct application...`, which looks like a huge conflict but is only line
+  endings. Normalise the baseline, ours and theirs to LF before replaying. The reliable route is a
+  per-file three-way merge with `git merge-file -p <ours> <base> <theirs>` (`base` = pristine old
+  upstream, `ours` = pristine new upstream, `theirs` = the validated old host tree); it produced
+  4 files / 7 real conflicts, not the dozens `git apply` appeared to report.
+* **`--locked` in `scripts/build_native.sh` fails after the upstream crate version changes.**
+  `native/rust/Cargo.lock` records the path-dependency versions of every `photocraft-*` crate, so
+  bumping the workspace version invalidates it. Run `cargo metadata --format-version 1` once in
+  `native/rust/` (no `--locked`) to rewrite the lockfile before calling `dev.sh build`, otherwise
+  the build aborts with `cannot update the lock file ... because --locked was passed`.
+
+Also re-check any **new upstream module** that reaches for `eframe::wgpu` directly: the host build
+has `eframe` optional and links `wgpu` itself, so such a file must use `wgpu::*` (v0.21.0's new
+`canvas/gpu_canvas/compositor_build.rs` needed exactly this).
+
 ## Port layers
 
 The port's own code is layered so each layer is one patch and one verification:

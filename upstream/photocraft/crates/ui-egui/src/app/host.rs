@@ -19,6 +19,11 @@ impl PhotocraftApp {
     /// into text, then the events the control channel injected.
     pub fn host_input(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
         let frame_start = gpu_canvas::now_ms();
+        // Drain the platform's optional WinTab queue before the frame's input is processed
+        // (v0.21.0). A shell with no tablet simply leaves the service unset.
+        if let Some(tablet_poll) = self.services.tablet_poll.as_mut() {
+            tablet_poll(raw_input.focused);
+        }
         // An undecorated window gets its caption back when the toolkit changes its flags
         // (maximize, restore, …): take it off again before the frame is laid out (#2246).
         if let Some(window_frame) = self.services.window_frame.as_mut() {

@@ -89,7 +89,7 @@ index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..3056c3eb4aff88e53d5eb2b6ac4391e4
      fn scan_of_nothing_is_empty() {
          assert!(scan(&[]).is_empty());
 diff --git a/upstream/photocraft/crates/engine/src/prefs.rs b/upstream/photocraft/crates/engine/src/prefs.rs
-index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d9225d53941 100644
+index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbcffbc4fe7 100644
 --- a/upstream/photocraft/crates/engine/src/prefs.rs
 +++ b/upstream/photocraft/crates/engine/src/prefs.rs
 @@ -56,10 +56,10 @@ choice!(TypeUnit { Points = "points", Pixels = "pixels", Millimeters = "mm" } de
@@ -106,50 +106,7 @@ index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d92
  choice!(CanvasColor { Default = "default", Black = "black", DarkGray = "darkGray", MediumGray = "mediumGray", LightGray = "lightGray", Custom = "custom" } default Default);
  choice!(CanvasBorder { DropShadow = "dropShadow", Line = "line", None = "none" } default DropShadow);
  choice!(UiScale { Auto = "auto", P75 = "75", P80 = "80", P85 = "85", P90 = "90", P95 = "95", P100 = "100", P105 = "105", P110 = "110", P115 = "115", P120 = "120", P125 = "125", P150 = "150", P175 = "175", P200 = "200", P250 = "250", P300 = "300" } default Auto);
-@@ -100,6 +100,14 @@ choice!(
-     /// pointer (Photoshop), or erase with the current brush while dragging (Krita, Paint).
-     RightClickPaint { BrushPicker = "brushPicker", Erase = "erase" } default BrushPicker
- );
-+choice!(
-+    /// Action for a double-tap on the pen body.
-+    StylusDoubleTap { Eraser = "eraser", Previous = "previous", Off = "off" } default Eraser
-+);
-+choice!(
-+    /// Action for a pen-body long-press or squeeze.
-+    StylusLongPress { ContextMenu = "contextMenu", Off = "off" } default ContextMenu
-+);
- choice!(OtherCursor { Standard = "standard", Precise = "precise" } default Standard);
- choice!(CheckerSize { None = "none", Small = "small", Medium = "medium", Large = "large" } default Medium);
- choice!(CheckerColors { Light = "light", Medium = "medium", Dark = "dark", Red = "red", Orange = "orange", Green = "green", Blue = "blue", Purple = "purple", Custom = "custom" } default Light);
-@@ -396,6 +404,15 @@ pub struct Tools {
-     pub right_click_with_painting_tools: RightClickPaint,
-     /// Pen tablets: pressure, tilt and rotation reach the brush (off: a pen paints like a mouse).
-     pub use_tablet_pressure: bool,
-+    /// Fingers navigate the canvas while the pen operates the current tool.
-+    pub block_finger_input: bool,
-+    /// Whether the user or first-connection setup has chosen the finger-input policy.
-+    /// Kept out of the generic preferences rows; the stylus controls own it.
-+    pub block_finger_input_configured: bool,
-+    /// Show the tool/cursor preview while a pen is hovering above the surface.
-+    pub stylus_hover_preview: bool,
-+    pub stylus_double_tap: StylusDoubleTap,
-+    pub stylus_long_press: StylusLongPress,
-     /// Pen pressure response: `[input, output]` control points in 0..1 that the pen's pressure
-     /// passes through before it reaches any brush ([`PressureCurve`]). Linear by default.
-     pub pressure_curve: Vec<[f32; 2]>,
-@@ -423,6 +440,11 @@ impl Default for Tools {
-             double_click_layer_mask_launches_select_and_mask: true,
-             right_click_with_painting_tools: RightClickPaint::BrushPicker,
-             use_tablet_pressure: true,
-+            block_finger_input: false,
-+            block_finger_input_configured: false,
-+            stylus_hover_preview: false,
-+            stylus_double_tap: StylusDoubleTap::Eraser,
-+            stylus_long_press: StylusLongPress::ContextMenu,
-             pressure_curve: vec![[0.0, 0.0], [1.0, 1.0]],
-             bundle_nudges: true,
-             nudge_bundle_pause_ms: 1000,
-@@ -1369,6 +1391,13 @@ impl Session {
+@@ -1511,6 +1511,13 @@ impl Session {
          if !v.is_object() {
              return Err("preferences: expected a JSON object".into());
          }
@@ -163,7 +120,7 @@ index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d92
          // Files before version 2 hold Use Shift Key for Tool Switch off because that was the
          // default when they were written: every key is saved, chosen or not. Like Photoshop it is
          // on by default now (#3528), so those files take the new default (#5647: a tool letter
-@@ -1386,10 +1415,10 @@ impl Session {
+@@ -1528,10 +1535,10 @@ impl Session {
              && let Some(theme) = interface.get("theme").and_then(Value::as_str).and_then(Theme::parse)
          {
              let (mode, slot) = match theme {
@@ -176,7 +133,7 @@ index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d92
                      ("light", "lightTheme")
                  }
              };
-@@ -1533,6 +1562,22 @@ impl Session {
+@@ -1682,6 +1689,22 @@ impl Session {
                      next.interface.light_theme = LightTheme::SoftLight;
                      next.interface.appearance_mode = AppearanceMode::Light;
                  }
@@ -200,21 +157,10 @@ index 80622e305dfc9aa59ed0cbebb0c0f85139166cbb..6dd453a7e9a6519be212e60c1fbf4d92
          }
          self.prefs.edit(|p| *p = next);
 diff --git a/upstream/photocraft/crates/engine/src/prefs/validate.rs b/upstream/photocraft/crates/engine/src/prefs/validate.rs
-index 37d0fdf02240c6de8253c62521647c2c8ee1aebe..591ed32d2cc92d3b0c1037df67d65355916a4e6e 100644
+index f9c0b9f8055f9af2c553ec69d227b0622c069d1b..2e776323ff9646c60eb0a2ccaa5a73d8932ce3fb 100644
 --- a/upstream/photocraft/crates/engine/src/prefs/validate.rs
 +++ b/upstream/photocraft/crates/engine/src/prefs/validate.rs
-@@ -2,8 +2,8 @@ use super::shortcuts::normalize_shortcut;
- use super::{
-     AppearanceMode, Ask, CanvasBorder, CanvasColor, CheckerColors, CheckerSize, ColorPicker, DarkTheme, ExportLocation, ExportMetadata, FontPreview,
-     GpuBackend, Interpolation, LightTheme, LineStyle, LinuxDisplayServer, LogDestination, LogDetail, OtherCursor, PaintingCursor, PointSize, PressureCurve,
--    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, TextEngine, Theme, TypeUnit, UiFontSize, UiScale,
--    Unit, Value,
-+    QuickExportFormat, RawColorSpace, RawDemosaic, RawDepth, RawSharpen, RenderingMode, RightClickPaint, StylusDoubleTap, StylusLongPress,
-+    TextEngine, Theme, TypeUnit, UiFontSize, UiScale, Unit, Value,
- };
- 
- /// Preferences dialog sections in Photoshop's order: (id, title).
-@@ -49,13 +49,27 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
+@@ -48,13 +48,27 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
      "enhancedControls.scrubbySliderAcceleration",
  ];
  
@@ -245,17 +191,8 @@ index 37d0fdf02240c6de8253c62521647c2c8ee1aebe..591ed32d2cc92d3b0c1037df67d65355
  pub const LINUX_ONLY: &[&str] = &["performance.linuxDisplayServer", "performance.gpuAdapter"];
  
  /// Whether a graphics adapter called `name` is the one `performance.gpuAdapter` (`wanted`) asks
-@@ -89,6 +103,8 @@ pub fn choices(path: &str) -> Option<&'static [&'static str]> {
-         "cursors.painting" => PaintingCursor::NAMES,
-         "cursors.other" => OtherCursor::NAMES,
-         "tools.rightClickWithPaintingTools" => RightClickPaint::NAMES,
-+        "tools.stylusDoubleTap" => StylusDoubleTap::NAMES,
-+        "tools.stylusLongPress" => StylusLongPress::NAMES,
-         "transparencyAndGamut.gridSize" => CheckerSize::NAMES,
-         "transparencyAndGamut.gridColors" => CheckerColors::NAMES,
-         "unitsAndRulers.rulers" | "guidesGridAndSlices.gridUnit" => Unit::NAMES,
 diff --git a/upstream/photocraft/crates/format/src/atomic.rs b/upstream/photocraft/crates/format/src/atomic.rs
-index 8cd349efff8c8c4665c075756f71b0f35d126d9a..8b8aafe52632632e07b4a55043fbe1b72e6e44d9 100644
+index a454416dff434ccc5933bf1a504057c3f63ead52..bde19ac1161bab5a8be897af3eac4405c10ac21c 100644
 --- a/upstream/photocraft/crates/format/src/atomic.rs
 +++ b/upstream/photocraft/crates/format/src/atomic.rs
 @@ -22,6 +22,10 @@
@@ -269,7 +206,7 @@ index 8cd349efff8c8c4665c075756f71b0f35d126d9a..8b8aafe52632632e07b4a55043fbe1b7
  //! On the web there is no file system: writes go through the platform services (downloads), so
  //! this module is never reached there; on `wasm32` every call returns the `std` "unsupported"
  //! error.
-@@ -39,6 +43,20 @@ use std::io::{self, Write};
+@@ -39,6 +43,20 @@ use std::io::{self, Seek, Write};
  use std::path::{Path, PathBuf};
  use std::sync::atomic::{AtomicU64, Ordering};
  
@@ -290,7 +227,7 @@ index 8cd349efff8c8c4665c075756f71b0f35d126d9a..8b8aafe52632632e07b4a55043fbe1b7
  /// The file-system steps [`atomic_write_with`] performs. [`RealFs`] is the real thing; tests
  /// wrap it to inject failures.
  pub trait AtomicFs {
-@@ -191,12 +209,18 @@ impl RenameRetry {
+@@ -217,12 +235,18 @@ impl RenameRetry {
  /// Errors keep their [`io::ErrorKind`]. Before replacement they say the original is unchanged;
  /// a Windows publication-flush error says the new file may not survive a power loss.
  pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -311,7 +248,7 @@ index 8cd349efff8c8c4665c075756f71b0f35d126d9a..8b8aafe52632632e07b4a55043fbe1b7
  }
  
 diff --git a/upstream/photocraft/crates/text/src/cjk.rs b/upstream/photocraft/crates/text/src/cjk.rs
-index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e938a26f33 100644
+index 1fe0f12534aaf00b05cbaeb6fc6846881015bffc..1285df79ae2549ba1eda4e2bbf921a1e26479d07 100644
 --- a/upstream/photocraft/crates/text/src/cjk.rs
 +++ b/upstream/photocraft/crates/text/src/cjk.rs
 @@ -106,11 +106,25 @@ pub fn ui_locale() -> Option<&'static str> {
@@ -341,7 +278,7 @@ index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e9
  fn detect_locale() -> Option<String> {
      let env = |k: &str| std::env::var(k).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty() && v != "C" && v != "POSIX" && !v.starts_with("C."));
      if let Some(v) = env("PHOTOCRAFT_LOCALE") {
-@@ -227,10 +241,20 @@ pub fn bplist_first_language(b: &[u8]) -> Option<String> {
+@@ -239,10 +253,20 @@ pub fn bplist_first_language(b: &[u8]) -> Option<String> {
  pub fn families(script: CjkScript) -> &'static [&'static str] {
      match script {
          CjkScript::Japanese => &["Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic"],
@@ -365,7 +302,7 @@ index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e9
          CjkScript::Korean => &["Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR", "NanumGothic", "UnDotum"],
      }
  }
-@@ -700,9 +724,11 @@ mod tests {
+@@ -736,9 +760,11 @@ mod tests {
          assert!(pos(&ja, "Hiragino Sans") < pos(&ja, "PingFang SC"));
          assert!(pos(&ja, "Noto Sans CJK JP") < pos(&ja, "Noto Sans CJK SC"));
          let sc = crate::fonts::fallback_candidates(&script_order(Some("zh_CN")));
@@ -377,7 +314,7 @@ index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e9
          assert!(pos(&tc, "PingFang TC") < pos(&tc, "PingFang SC"));
          let ko = crate::fonts::fallback_candidates(&script_order(Some("ko")));
          assert!(pos(&ko, "Apple SD Gothic Neo") < pos(&ko, "PingFang SC"));
-@@ -714,6 +740,26 @@ mod tests {
+@@ -750,6 +776,26 @@ mod tests {
          }
      }
  
@@ -405,7 +342,7 @@ index ab1c7d89925589b60ad02d0471acbffaf30d226e..bc1ff9df30c838b4f98161250e3e51e9
      fn classify_chars() {
          let order = script_order(Some("en"));
 diff --git a/upstream/photocraft/crates/ui-egui/src/i18n.rs b/upstream/photocraft/crates/ui-egui/src/i18n.rs
-index a8fa5c2bcf6532abd5fca9df58b647b261232235..15712638dd4aebbb0ce259e8a80421091548d396 100644
+index ada37cd0cf4f32f7f8c1a51ef329c87d6a4289a3..b69b15a5da8d637f006dd87f1ba9f2960971c0a0 100644
 --- a/upstream/photocraft/crates/ui-egui/src/i18n.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/i18n.rs
 @@ -27,6 +27,11 @@ mod system;
@@ -622,6 +559,21 @@ index b2bef186e99d191d51ceb61b0e23d712aa7c5b26..8fdcccf10d0c73fec3903123b0bc1640
 +        assert_eq!(query_lang("?lang"), None);
 +        assert_eq!(query_lang("?webgl&cpu"), None);
 +    }
+ }
+diff --git a/upstream/photocraft/crates/ui-egui/tests/it/crop_overlay_icons.rs b/upstream/photocraft/crates/ui-egui/tests/it/crop_overlay_icons.rs
+index 2cbc8195e6ae621f4ebe359e5a6d670559199497..0f2e90adad3ef9579326782c27929faf0b2d4204 100644
+--- a/upstream/photocraft/crates/ui-egui/tests/it/crop_overlay_icons.rs
++++ b/upstream/photocraft/crates/ui-egui/tests/it/crop_overlay_icons.rs
+@@ -160,7 +160,9 @@ fn the_canvas_crop_menu_lists_a_glyph_per_overlay() {
+     let opened = photocraft_ui_egui::canvas::canvas_tool_menu::open_crop(h.state_mut(), &ctx, Tool::Crop, [600.0, 400.0]);
+     assert!(opened, "the crop menu opens on a pending crop");
+     h.run();
+-    let glyphs: Vec<_> = CropOverlay::ALL.iter().map(|kind| row_glyph(&h, kind.label())).collect();
++    // The canvas menu draws these rows through `tl!` (i18n::t), so on a non-English host the
++    // row's accessibility label is the translated string, not the English `kind.label()` (#10889).
++    let glyphs: Vec<_> = CropOverlay::ALL.iter().map(|kind| row_glyph(&h, photocraft_ui_egui::i18n::t(kind.label()))).collect();
+     let unique: HashSet<_> = glyphs.iter().copied().collect();
+     assert_eq!(unique.len(), CropOverlay::ALL.len(), "one glyph per row: {glyphs:?}");
  }
 diff --git a/upstream/photocraft/crates/ui-egui/tests/it/system_locale.rs b/upstream/photocraft/crates/ui-egui/tests/it/system_locale.rs
 index 24d5f44dc13a6be09dc546c9a8d7172341667a19..d122cdfb944c245d8271ad6c4a010edfa1a53455 100644

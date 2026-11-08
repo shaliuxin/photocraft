@@ -1,8 +1,8 @@
 diff --git a/upstream/photocraft/Cargo.lock b/upstream/photocraft/Cargo.lock
-index 27fbbbc09c7f2d9d5c6cc6eb1787572a6947bb22..f9ad00a53c7153d71d463ba54cdd53f07f7c6b2b 100644
+index ebb5223a0a7a43d967c29f5ce539841901928845..67870c5e47e7956132171b830703418c928ed90d 100644
 --- a/upstream/photocraft/Cargo.lock
 +++ b/upstream/photocraft/Cargo.lock
-@@ -5422,6 +5422,7 @@ dependencies = [
+@@ -5575,6 +5575,7 @@ dependencies = [
   "craft-update",
   "eframe",
   "egui",
@@ -10,7 +10,7 @@ index 27fbbbc09c7f2d9d5c6cc6eb1787572a6947bb22..f9ad00a53c7153d71d463ba54cdd53f0
   "egui_extras",
   "egui_kittest",
   "epaint_default_fonts",
-@@ -5454,6 +5455,7 @@ dependencies = [
+@@ -5607,6 +5608,7 @@ dependencies = [
   "toml",
   "unicode-bidi",
   "web-time",
@@ -19,7 +19,7 @@ index 27fbbbc09c7f2d9d5c6cc6eb1787572a6947bb22..f9ad00a53c7153d71d463ba54cdd53f0
  ]
  
 diff --git a/upstream/photocraft/crates/ui-egui/Cargo.toml b/upstream/photocraft/crates/ui-egui/Cargo.toml
-index 326e6bf7a7d2d1a476db46080c205f066b5d7b7b..9369dcbea96b73db1f3b6b9ccd5e531a111fb8e5 100644
+index 26177c5e681bdf1f378f82bf460dfeccb9986205..bc0e5dcc23b13413d5c21e35436c5adb4c716025 100644
 --- a/upstream/photocraft/crates/ui-egui/Cargo.toml
 +++ b/upstream/photocraft/crates/ui-egui/Cargo.toml
 @@ -4,6 +4,16 @@ version.workspace = true
@@ -39,8 +39,8 @@ index 326e6bf7a7d2d1a476db46080c205f066b5d7b7b..9369dcbea96b73db1f3b6b9ccd5e531a
  [lints]
  workspace = true
  
-@@ -31,7 +41,11 @@ photocraft-format = { workspace = true }
- photocraft-codecs = { workspace = true }
+@@ -34,7 +44,11 @@ photocraft-codecs = { workspace = true }
+ photocraft-psd = { workspace = true }
  egui = { workspace = true }
  egui_extras = { version = "0.37", default-features = false, features = ["svg"] }
 -eframe = { workspace = true, features = ["wgpu", "accesskit", "clipboard"] }
@@ -52,7 +52,7 @@ index 326e6bf7a7d2d1a476db46080c205f066b5d7b7b..9369dcbea96b73db1f3b6b9ccd5e531a
  serde = { workspace = true }
  serde_json = { workspace = true }
  log = { workspace = true }
-@@ -45,7 +59,8 @@ web-time = { workspace = true }
+@@ -48,7 +62,8 @@ web-time = { workspace = true }
  [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
  # Floating panels open in their own OS windows on the desktop; the web keeps them in the page.
  craft-ui = { workspace = true, features = ["native-windows"] }
@@ -63,18 +63,18 @@ index 326e6bf7a7d2d1a476db46080c205f066b5d7b7b..9369dcbea96b73db1f3b6b9ccd5e531a
  # Safe native UI-language APIs (Windows/macOS); no subprocess or web dependency.
  sys-locale = "=0.3.2"
 diff --git a/upstream/photocraft/crates/ui-egui/src/app.rs b/upstream/photocraft/crates/ui-egui/src/app.rs
-index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd952dca0988 100644
+index 0a77bbdf3bdbc17a250798902e7ffeb9c84dced5..d64b483f066a2997429631db58f9cb5330d09ff4 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app.rs
-@@ -15,6 +15,7 @@ mod control;
- mod files;
+@@ -16,6 +16,7 @@ mod files;
+ pub(crate) use files::ensure_memory_to_save;
  mod frame;
  mod gpu;
 +mod host;
  mod ime;
  mod input;
  mod prefs;
-@@ -90,6 +91,8 @@ impl PhotocraftApp {
+@@ -94,6 +95,8 @@ impl PhotocraftApp {
              styled: false,
              integrated_titlebar: false,
              custom_titlebar: false,
@@ -83,7 +83,7 @@ index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd95
              last_window_title: String::new(),
              fonts_ready: false,
              last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
-@@ -217,61 +220,26 @@ impl PhotocraftApp {
+@@ -229,61 +232,23 @@ impl PhotocraftApp {
      }
  }
  
@@ -109,8 +109,12 @@ index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd95
          self.finish_type_reset_logic(ctx);
      }
  
+     /// Drain the platform's optional WinTab queue before the frame's input is processed.
      fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
 -        let frame_start = gpu_canvas::now_ms();
+-        if let Some(tablet_poll) = self.services.tablet_poll.as_mut() {
+-            tablet_poll(raw_input.focused);
+-        }
 -        // An undecorated window gets its caption back when the toolkit changes its flags
 -        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
 -        if let Some(window_frame) = self.services.window_frame.as_mut() {
@@ -148,19 +152,23 @@ index 3015f0214d62bbeef860657e08cf5a639a9cb81e..75cf774dd9544b669836e96cb45cbd95
      }
  
      fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+@@ -295,7 +260,7 @@ impl eframe::App for PhotocraftApp {
+             self.ui.status = error;
+             self.ui.status_error = true;
+         }
 -        self.ui_frame(ui, frame);
 +        self.ui_frame(ui, Some(frame));
          self.finish_type_reset_pass(ui.ctx());
      }
  }
 diff --git a/upstream/photocraft/crates/ui-egui/src/app/frame.rs b/upstream/photocraft/crates/ui-egui/src/app/frame.rs
-index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8141e49bf 100644
+index eec74bfcc4188806f7b18b23a25cd2dbcf39b809..545fe6734c787c4a002ad1d40c6521deefda257e 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app/frame.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app/frame.rs
-@@ -21,8 +21,9 @@ impl PhotocraftApp {
- }
+@@ -31,8 +31,9 @@ impl PhotocraftApp {
+         !opening && self.ui.chrome.shows_home(n, self.session.prefs().general.auto_show_home_screen)
+     }
  
- impl PhotocraftApp {
 -    /// Shared logic body. A wrapping host owns the final reset tail after its own work.
 -    pub fn logic_frame(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
 +    /// Shared logic body. A wrapping host owns the final reset tail after its own work, and
@@ -169,7 +177,7 @@ index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8
          self.cap_frame_rate();
          i18n::set_current(i18n::Lang::from_pref(&self.session.prefs().interface.language));
          // Caps Lock state read from the OS once per frame (see `Services::caps_lock`): the canvas
-@@ -66,7 +67,7 @@ impl PhotocraftApp {
+@@ -77,7 +78,7 @@ impl PhotocraftApp {
          shape_stroke_ui::sync_editor(self, ctx);
          prefs_ui::tick(self, ctx);
          updates_ui::tick(self, ctx);
@@ -178,7 +186,7 @@ index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8
          // Control requests and persisted preferences can change the language in this frame.
          i18n::sync_context(ctx, &self.session.prefs().interface.language);
          type_tool::sync_font_names(ctx, self.session.prefs().type_.show_font_names_in_english);
-@@ -131,12 +132,12 @@ impl PhotocraftApp {
+@@ -140,12 +141,12 @@ impl PhotocraftApp {
          if self.captures.any_unissued() || self.synthetic_batch.is_some() || !self.synthetic.is_empty() {
              ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaintWhileHidden);
          }
@@ -193,7 +201,7 @@ index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8
          let ctx = ui.ctx().clone();
          // One control owner even when this callback cannot draw the custom editor.
          if !self.fonts_ready
-@@ -175,7 +176,15 @@ impl PhotocraftApp {
+@@ -184,7 +185,15 @@ impl PhotocraftApp {
              return;
          }
          let t0 = gpu_canvas::now_ms();
@@ -210,7 +218,7 @@ index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8
          // A software adapter or CPU mode chosen at startup is every document's reason.
          crate::render_path::frame(self);
          // Every frame that started its stage record closes it, whichever way `ui_body` returns.
-@@ -216,7 +225,7 @@ impl PhotocraftApp {
+@@ -225,7 +234,7 @@ impl PhotocraftApp {
          // polling it even when the platform would otherwise put the event loop to sleep.
          jobs_ui::keep_polling(self, &ctx);
          // Menus and buttons in this frame may have asked for a file dialog.
@@ -220,7 +228,7 @@ index 07ea17b7e8103a19c41715ee1b693575ca927160..d6c0838e98f45fa5a7f83dbfe58979b8
          // canvas have finished mutating the model, and an absent/focus-moved editor ends here.
          type_tool::sync_ime(self, &ctx);
 diff --git a/upstream/photocraft/crates/ui-egui/src/app/gpu.rs b/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
-index 055a85e0fd4cbee2c591c079d1977653d442a587..4b78988d07e09d09e7af02976deee4b55c8632f3 100644
+index b38536ab6b8b0283d88343ab3c2d22ec80d5387d..406920f060b17f0a41e69a113b2ce3dd4dea3669 100644
 --- a/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/app/gpu.rs
 @@ -3,7 +3,7 @@ use super::{PhotocraftApp, gpu_canvas, gpu_status};
@@ -232,7 +240,7 @@ index 055a85e0fd4cbee2c591c079d1977653d442a587..4b78988d07e09d09e7af02976deee4b5
          // Preferences › Performance › cache tile size (PHOTOCRAFT_GPU_TILE still overrides).
          let tile = self.session.prefs().performance.cache_tile_size;
          // Escaped driver/setup panics must leave the session and CPU canvas alive.
-@@ -46,7 +46,7 @@ impl PhotocraftApp {
+@@ -120,7 +120,7 @@ impl PhotocraftApp {
  
      /// Watch the device the window draws with when the GPU canvas doesn't (the CPU canvas), so
      /// its loss is handled like the GPU canvas's (see `gpu_status::check_window`).
@@ -241,11 +249,102 @@ index 055a85e0fd4cbee2c591c079d1977653d442a587..4b78988d07e09d09e7af02976deee4b5
          self.window_device = Some((device.clone(), photocraft_gpu::DeviceHealth::watch(device)));
      }
  
+diff --git a/upstream/photocraft/crates/ui-egui/src/app/host.rs b/upstream/photocraft/crates/ui-egui/src/app/host.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..89cecae7c2185510666563138cbcb8bbbc1d72e2
+--- /dev/null
++++ b/upstream/photocraft/crates/ui-egui/src/app/host.rs
+@@ -0,0 +1,85 @@
++//! The frame a host that is not eframe drives.
++//!
++//! On the desktop eframe owns the window: its event loop delivers the input, and each pass is
++//! handed an `eframe::Frame` carrying the window and its timings. A platform shell that owns the
++//! window itself — HarmonyOS' ArkUI/XComponent, a scripted host — drives the same three stages
++//! directly and passes no frame at all: [`file_dialog::ParentFrame`] is `()` there.
++//!
++//! One frame, in the window's order: [`PhotocraftApp::host_input`], then
++//! [`PhotocraftApp::host_logic`], then [`PhotocraftApp::host_ui`]. Keep `host_ui` last, and call
++//! it exactly once per frame that ran `host_input`: it closes the frame's stage record.
++
++use super::{PhotocraftApp, gpu_canvas, shortcuts, stylus, titlebar, widgets, wheel_nav};
++
++impl PhotocraftApp {
++    /// Input: the events the host collected since the previous frame, adjusted in place.
++    ///
++    /// Everything here rewrites the events the widgets will see, so it must run before any
++    /// widget: the host's own title-bar handling, then the shortcuts that turn clipboard keys
++    /// into text, then the events the control channel injected.
++    pub fn host_input(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
++        let frame_start = gpu_canvas::now_ms();
++        // Drain the platform's optional WinTab queue before the frame's input is processed
++        // (v0.21.0). A shell with no tablet simply leaves the service unset.
++        if let Some(tablet_poll) = self.services.tablet_poll.as_mut() {
++            tablet_poll(raw_input.focused);
++        }
++        // An undecorated window gets its caption back when the toolkit changes its flags
++        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
++        if let Some(window_frame) = self.services.window_frame.as_mut() {
++            window_frame();
++        }
++        // Native menu key equivalents become the key presses they were (see `native_menu`).
++        if let Some(menu) = self.services.native_menu.as_mut() {
++            menu.raw_input(raw_input);
++        }
++        // While a text field of a floating panel's own window has the keyboard, the dock area
++        // hands that window the text keys in this input and converts them there.
++        if craft_ui::docking::typing_window(ctx).is_none() {
++            shortcuts::clipboard_keys(ctx, ctx.text_edit_focused() || self.ui.text_edit.is_some(), raw_input);
++        }
++        // Windows precision touchpads and some Linux Wayland compositors send pinches
++        // as fractional Ctrl + wheel rather than a native Zoom event (#4566).
++        // Leave Ctrl+whole-notch mouse scrolling alone, and honour the pinch preference.
++        if cfg!(any(target_os = "windows", target_os = "linux")) && self.session.prefs().enhanced_controls.zoom_with_trackpad_pinch {
++            wheel_nav::fold_legacy_pinch(ctx, raw_input);
++        }
++        self.inject_synthetic(ctx, raw_input);
++        // After the control channel's own events (`ui.type`) join the OS's, before any widget.
++        widgets::cap_text_events(&mut raw_input.events);
++        self.control_click.normalize(&mut raw_input.events, cfg!(target_os = "macos"));
++        // A pen held still is no touch screen's press-and-hold right click (stylus.rs).
++        let pen_down = self.stylus.pen_contacts.observe(&raw_input.events);
++        stylus::pen_hold_is_no_right_click(ctx, pen_down);
++        if self.custom_titlebar {
++            titlebar::release_after_os_resize(ctx, raw_input);
++        }
++        // The OS's moves and the control channel's (injected just above).
++        let moves = raw_input.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).count();
++        self.perf.stage.start(frame_start, moves);
++    }
++
++    /// Logic: the frame's work before anything is drawn (commands, jobs, documents, prefs).
++    pub fn host_logic(&mut self, ctx: &egui::Context) {
++        self.logic_frame(ctx, None);
++        self.finish_type_reset_logic(ctx);
++    }
++
++    /// The UI pass: draw the editor into a full-window `Ui` and close the frame's stage record.
++    pub fn host_ui(&mut self, ui: &mut egui::Ui) {
++        self.ui_frame(ui, None);
++        self.finish_type_reset_pass(ui.ctx());
++    }
++
++    /// Closing the window: keep what the app remembers across runs and answer pending captures.
++    /// A host calls this once, after its last frame; the desktop reaches it through `on_exit`.
++    pub fn host_exit(&mut self) {
++        if let Err(err) = super::tool_memory::save_on_exit(self) {
++            log::warn!("Preferences: could not save the final tool selection: {err}");
++        }
++        // Release a pending screenshot's image budget and answer its control request; the
++        // callback is inert afterwards (it holds only a weak slot).
++        let finished = self.captures.cancel_all("the application is closing");
++        self.finish_captures(finished);
++    }
++}
 diff --git a/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs b/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
-index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08cec76474a6 100644
+index 042aac8e369c2ea2d6c7ae6a3fbc51f7929b7715..88ee329d12b38d14d2ef2660782babcd62698e5c 100644
 --- a/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/canvas/background_redraw.rs
-@@ -115,7 +115,7 @@ pub(crate) struct Redraw {
+@@ -118,7 +118,7 @@ pub(crate) struct Redraw {
      doc: Arc<Document>,
      display: u64,
      text_gamma: u32,
@@ -254,7 +353,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
      /// Uploaded blocks of `doc` kept for [`Kept`] (empty once over `cap`), and their bytes.
      collected: Vec<Option<Vec<u8>>>,
      collected_bytes: u64,
-@@ -159,7 +159,7 @@ pub(crate) struct Kept {
+@@ -162,7 +162,7 @@ pub(crate) struct Kept {
      id: DocId,
      display: u64,
      text_gamma: u32,
@@ -263,7 +362,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
      blocks: Vec<Rect>,
      texels: Vec<Vec<u8>>,
      bytes: u64,
-@@ -171,7 +171,7 @@ impl Kept {
+@@ -174,7 +174,7 @@ impl Kept {
      /// else it holds), so a stale composite can't come back; Arc-shared tiles compare without
      /// reading their pixels. Besides the document, the display transform and the text gamma
      /// ([`text_gamma`]) decide the texels.
@@ -272,7 +371,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
          self.display == display
              && self.text_gamma == text_gamma
              && self.format == format
-@@ -190,7 +190,7 @@ pub(crate) struct KeptComposites {
+@@ -193,7 +193,7 @@ pub(crate) struct KeptComposites {
  
  impl KeptComposites {
      /// The kept redraw of exactly this state, now the newest.
@@ -281,7 +380,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
          let i = self.entries.iter().position(|k| k.matches(doc, display, text_gamma, format, blocks))?;
          let k = self.entries.remove(i)?;
          self.entries.push_front(k);
-@@ -448,7 +448,7 @@ struct Spawn {
+@@ -459,7 +459,7 @@ struct Spawn {
      display: Option<Arc<CanvasDisplay>>,
      display_key: u64,
      text_gamma: u32,
@@ -290,7 +389,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
      visible: Rect,
      blocks: Vec<Rect>,
      pending: Vec<bool>,
-@@ -533,7 +533,7 @@ fn spawn(app: &mut PhotocraftApp, ctx: &egui::Context, s: Spawn) {
+@@ -547,7 +547,7 @@ fn spawn(app: &mut PhotocraftApp, ctx: &egui::Context, s: Spawn) {
  fn draw(
      doc: &Document,
      display: Option<&CanvasDisplay>,
@@ -300,7 +399,7 @@ index 003d250ab333b2841d59f8a1daaac57b7f2310fb..ee7d0889dcf70bbb1ad6fde5292b08ce
      todo: &[usize],
      stop: &AtomicBool,
 diff --git a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
-index 48aeb07e0fbe11d58aed59fd83ce79f4aa5520a3..9c29f1ba83a9750de5510f6a11f0aad6553206f8 100644
+index 0311f569342ce655afd6ff0e803398266aba2bdd..927fad9a8cc77ad28573487217a5f95c3a2c4fd0 100644
 --- a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas.rs
 @@ -29,8 +29,8 @@ use std::collections::HashMap;
@@ -314,6 +413,19 @@ index 48aeb07e0fbe11d58aed59fd83ce79f4aa5520a3..9c29f1ba83a9750de5510f6a11f0aad6
  
  use crate::render_path::CpuReason;
  
+diff --git a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas/compositor_build.rs b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas/compositor_build.rs
+index 5e280a05afbb763f4664a29eaacef971592aca17..d095ba9ecd99bc538fb9fcc26027927bfbe8aa2b 100644
+--- a/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas/compositor_build.rs
++++ b/upstream/photocraft/crates/ui-egui/src/canvas/gpu_canvas/compositor_build.rs
+@@ -15,7 +15,7 @@ pub(super) type Slot = Arc<Mutex<BuildState>>;
+ pub(super) type Completion = Arc<Mutex<Option<Result<(), (String, bool)>>>>;
+ 
+ #[cfg(not(target_arch = "wasm32"))]
+-pub(super) fn start(device: &eframe::wgpu::Device, format: eframe::wgpu::TextureFormat, ctx: &egui::Context, slot: &Slot, completion: &Completion) {
++pub(super) fn start(device: &wgpu::Device, format: wgpu::TextureFormat, ctx: &egui::Context, slot: &Slot, completion: &Completion) {
+     let mut state = slot.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+     if !matches!(*state, BuildState::NotStarted) {
+         return;
 diff --git a/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs b/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
 index 5e9f8719faeaa324eafffd0fbbc4a2108f4af459..9e1968ec161cb64c34a2210c0ee832ceacee63b5 100644
 --- a/upstream/photocraft/crates/ui-egui/src/dialogs/camera_raw_gpu.rs
@@ -432,7 +544,7 @@ index bddc6796d3d255986e0ca4a700761b9f238a5858..d779b517b9738e1835a11d6b2bbb2689
          if p.held.is_some() {
              // The question whether to replace answers through `answer_replace`. Closed without an
 diff --git a/upstream/photocraft/crates/ui-egui/src/lib.rs b/upstream/photocraft/crates/ui-egui/src/lib.rs
-index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115dc7b3769 100644
+index 794f1c7e26b432c3a1179704a44a5fac4af0ccfd..6a96649aab1e773913792b13b42844d7a9b56277 100644
 --- a/upstream/photocraft/crates/ui-egui/src/lib.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/lib.rs
 @@ -11,7 +11,7 @@
@@ -452,8 +564,8 @@ index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115
 +pub mod window_fullscreen;
  pub mod dialogs;
  pub mod dock;
- pub mod file_dialog;
-@@ -457,6 +459,12 @@ pub struct PhotocraftApp {
+ pub(crate) mod edit_session;
+@@ -468,6 +470,12 @@ pub struct PhotocraftApp {
      /// Windows and Linux: the window has no OS decorations and the app's top bar is the title bar
      /// (caption buttons, window dragging and edge resizing, `titlebar`).
      pub custom_titlebar: bool,
@@ -466,7 +578,7 @@ index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115
      /// Last window title sent to the OS (`ViewportCommand::Title`, see `panels::sync_window_title`):
      /// sent again only when it changes, so idle frames don't spam the backend.
      last_window_title: String,
-@@ -642,7 +650,7 @@ pub struct PhotocraftApp {
+@@ -663,7 +671,7 @@ pub struct PhotocraftApp {
      gpu: Option<gpu_canvas::GpuCanvas>,
      /// The device the window itself draws with, and its health flag: the GPU canvas's, or one
      /// watched for the CPU canvas (see `gpu_status::check_window`).
@@ -475,7 +587,7 @@ index 8165b8a41d6ff07e21ea56b4c1f64a590c2cebf2..aa9bb210b421456922c5339585b51115
      /// That device was lost: frames draw nothing and the app closes once its work is saved (#3438).
      window_lost: bool,
      /// When (in `egui::InputState::time`) to try saving unsaved work for recovery again after a
-@@ -650,7 +658,7 @@ pub struct PhotocraftApp {
+@@ -671,7 +679,7 @@ pub struct PhotocraftApp {
      window_recovery_retry: Option<f64>,
      /// The render state the GPU canvas was built on, kept after it is dropped so Retry GPU can
      /// build a new one on the same device (see `gpu_status::choose_recovery`, #6577).
@@ -513,194 +625,6 @@ index 2350e6dc30dc0babc5c9ea208a05d38057e6e914..9021cd5cf32d1a0834ede434f5938353
      poll(app, ctx);
  }
  
-diff --git a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
-index 28bca7c55b7e04462d879832cf0be32ba6040bd9..07c4cb1a897b12fe8dfab7990b5fe98175b52c47 100644
---- a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
-+++ b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
-@@ -19,7 +19,7 @@
- 
- use std::sync::Arc;
- 
--use eframe::wgpu;
-+use wgpu;
- use egui::{Color32, FullOutput, ImageData, TexturesDelta};
- 
- /// What a fully transparent texel is uploaded as.
-diff --git a/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs b/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
-index a63ede17a0dbed4946219ed1e430d872a1ef9f90..6f9e6d0f31ebde98a5f77bb313aeb8d6a4413d06 100644
---- a/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
-+++ b/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
-@@ -1034,9 +1034,10 @@ fn reset_harness(app: PhotocraftApp) -> egui_kittest::Harness<'static, ResetHarn
-         })
-         .build_ui_state(
-             |ui, state: &mut ResetHarness| {
--                let mut frame = eframe::Frame::_new_kittest();
--                state.app.logic_frame(ui.ctx(), &mut frame);
--                state.app.ui_frame(ui, &mut frame);
-+                // The host seam takes `Option<&ParentFrame>`: a shell without eframe has no window.
-+                let frame = eframe::Frame::_new_kittest();
-+                state.app.logic_frame(ui.ctx(), Some(&frame));
-+                state.app.ui_frame(ui, Some(&frame));
-                 if state.stock {
-                     egui::Window::new("Reset font fixture").show(ui.ctx(), |ui| {
-                         let button = ui.make_persistent_id(egui::IdSalt::new("reset-font"));
-diff --git a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
-index c69a3ec099d9ff4ce130f32ebd4c8550f673fe0c..dd74fbb1914c22cea2b7da8df5995ac07fd2f3bc 100644
---- a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
-+++ b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
-@@ -9,7 +9,7 @@ pub(crate) struct Runtime {
-     startup_checked: bool,
-     notified_version: Option<String>,
-     /// The startup prompt and the self-update behind it (desktop).
--    #[cfg(not(target_arch = "wasm32"))]
-+    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
-     updater: craft_update::updater::Updater,
- }
- 
-@@ -18,14 +18,14 @@ impl Default for Runtime {
-         Self {
-             startup_checked: false,
-             notified_version: None,
--            #[cfg(not(target_arch = "wasm32"))]
-+            #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
-             updater: craft_update::updater::Updater::new(&crate::UPDATE_APP, photocraft_engine::build_info::VERSION),
-         }
-     }
- }
- 
- /// The release the engine found, as `craft-update` knows it.
--#[cfg(not(target_arch = "wasm32"))]
-+#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
- fn release_of(found: &photocraft_engine::updates_cmds::Release) -> craft_update::Release {
-     craft_update::Release {
-         tag: format!("v{}", found.version),
-@@ -63,7 +63,7 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
-     {
-         app.updates_rt.notified_version = Some(release.version.clone());
-         app.ui.updates_open = true;
--        #[cfg(not(target_arch = "wasm32"))]
-+        #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
-         app.updates_rt.updater.offer(release_of(release));
-     }
-     if app.session.updates.check.is_none() {
-@@ -80,10 +80,10 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
-     }
- }
- 
--#[cfg(target_arch = "wasm32")]
-+#[cfg(any(target_arch = "wasm32", not(feature = "self-update")))]
- pub(crate) fn show(_app: &mut PhotocraftApp, _ctx: &egui::Context) {}
- 
--#[cfg(not(target_arch = "wasm32"))]
-+#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
- pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
-     let mut download: Option<String> = None;
-     {
-@@ -122,7 +122,7 @@ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
- 
- /// The engine's check state as the result dialog shows it. An available release goes to the
- /// startup prompt, so the dialog draws nothing for it.
--#[cfg(not(target_arch = "wasm32"))]
-+#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
- fn check_status(status: &Status) -> craft_update::updater::Status {
-     use craft_update::updater::Status as Shown;
-     match status {
-@@ -247,7 +247,7 @@ mod tests {
-     }
- 
-     #[test]
--    #[cfg(not(target_arch = "wasm32"))]
-+    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
-     fn startup_update_prompt_appears_and_can_be_dismissed() {
-         let (mut app, _, sender) = app();
-         let ctx = egui::Context::default();
-
-diff --git a/upstream/photocraft/crates/ui-egui/src/app/host.rs b/upstream/photocraft/crates/ui-egui/src/app/host.rs
-new file mode 100644
-index 0000000000000000000000000000000000000000..776b9773e5a6964ac85079564208e99e01756250
---- /dev/null
-+++ b/upstream/photocraft/crates/ui-egui/src/app/host.rs
-@@ -0,0 +1,80 @@
-+//! The frame a host that is not eframe drives.
-+//!
-+//! On the desktop eframe owns the window: its event loop delivers the input, and each pass is
-+//! handed an `eframe::Frame` carrying the window and its timings. A platform shell that owns the
-+//! window itself — HarmonyOS' ArkUI/XComponent, a scripted host — drives the same three stages
-+//! directly and passes no frame at all: [`file_dialog::ParentFrame`] is `()` there.
-+//!
-+//! One frame, in the window's order: [`PhotocraftApp::host_input`], then
-+//! [`PhotocraftApp::host_logic`], then [`PhotocraftApp::host_ui`]. Keep `host_ui` last, and call
-+//! it exactly once per frame that ran `host_input`: it closes the frame's stage record.
-+
-+use super::{PhotocraftApp, gpu_canvas, shortcuts, stylus, titlebar, widgets, wheel_nav};
-+
-+impl PhotocraftApp {
-+    /// Input: the events the host collected since the previous frame, adjusted in place.
-+    ///
-+    /// Everything here rewrites the events the widgets will see, so it must run before any
-+    /// widget: the host's own title-bar handling, then the shortcuts that turn clipboard keys
-+    /// into text, then the events the control channel injected.
-+    pub fn host_input(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
-+        let frame_start = gpu_canvas::now_ms();
-+        // An undecorated window gets its caption back when the toolkit changes its flags
-+        // (maximize, restore, …): take it off again before the frame is laid out (#2246).
-+        if let Some(window_frame) = self.services.window_frame.as_mut() {
-+            window_frame();
-+        }
-+        // Native menu key equivalents become the key presses they were (see `native_menu`).
-+        if let Some(menu) = self.services.native_menu.as_mut() {
-+            menu.raw_input(raw_input);
-+        }
-+        // While a text field of a floating panel's own window has the keyboard, the dock area
-+        // hands that window the text keys in this input and converts them there.
-+        if craft_ui::docking::typing_window(ctx).is_none() {
-+            shortcuts::clipboard_keys(ctx, ctx.text_edit_focused() || self.ui.text_edit.is_some(), raw_input);
-+        }
-+        // Windows precision touchpads and some Linux Wayland compositors send pinches
-+        // as fractional Ctrl + wheel rather than a native Zoom event (#4566).
-+        // Leave Ctrl+whole-notch mouse scrolling alone, and honour the pinch preference.
-+        if cfg!(any(target_os = "windows", target_os = "linux")) && self.session.prefs().enhanced_controls.zoom_with_trackpad_pinch {
-+            wheel_nav::fold_legacy_pinch(ctx, raw_input);
-+        }
-+        self.inject_synthetic(ctx, raw_input);
-+        // After the control channel's own events (`ui.type`) join the OS's, before any widget.
-+        widgets::cap_text_events(&mut raw_input.events);
-+        self.control_click.normalize(&mut raw_input.events, cfg!(target_os = "macos"));
-+        // A pen held still is no touch screen's press-and-hold right click (stylus.rs).
-+        let pen_down = self.stylus.pen_contacts.observe(&raw_input.events);
-+        stylus::pen_hold_is_no_right_click(ctx, pen_down);
-+        if self.custom_titlebar {
-+            titlebar::release_after_os_resize(ctx, raw_input);
-+        }
-+        // The OS's moves and the control channel's (injected just above).
-+        let moves = raw_input.events.iter().filter(|e| matches!(e, egui::Event::PointerMoved(_))).count();
-+        self.perf.stage.start(frame_start, moves);
-+    }
-+
-+    /// Logic: the frame's work before anything is drawn (commands, jobs, documents, prefs).
-+    pub fn host_logic(&mut self, ctx: &egui::Context) {
-+        self.logic_frame(ctx, None);
-+        self.finish_type_reset_logic(ctx);
-+    }
-+
-+    /// The UI pass: draw the editor into a full-window `Ui` and close the frame's stage record.
-+    pub fn host_ui(&mut self, ui: &mut egui::Ui) {
-+        self.ui_frame(ui, None);
-+        self.finish_type_reset_pass(ui.ctx());
-+    }
-+
-+    /// Closing the window: keep what the app remembers across runs and answer pending captures.
-+    /// A host calls this once, after its last frame; the desktop reaches it through `on_exit`.
-+    pub fn host_exit(&mut self) {
-+        if let Err(err) = super::tool_memory::save_on_exit(self) {
-+            log::warn!("Preferences: could not save the final tool selection: {err}");
-+        }
-+        // Release a pending screenshot's image budget and answer its control request; the
-+        // callback is inert afterwards (it holds only a weak slot).
-+        let finished = self.captures.cancel_all("the application is closing");
-+        self.finish_captures(finished);
-+    }
-+}
 diff --git a/upstream/photocraft/crates/ui-egui/src/path_pick.rs b/upstream/photocraft/crates/ui-egui/src/path_pick.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..978f019edc7bcf28847de6326510205ab50ed36c
@@ -1218,6 +1142,107 @@ index 0000000000000000000000000000000000000000..21c4d42bfd248ecc2adf4072c02278a9
 +    }
 +    let _ = &mut app;
 +}
+diff --git a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
+index 28bca7c55b7e04462d879832cf0be32ba6040bd9..07c4cb1a897b12fe8dfab7990b5fe98175b52c47 100644
+--- a/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
++++ b/upstream/photocraft/crates/ui-egui/src/texel_guard.rs
+@@ -19,7 +19,7 @@
+ 
+ use std::sync::Arc;
+ 
+-use eframe::wgpu;
++use wgpu;
+ use egui::{Color32, FullOutput, ImageData, TexturesDelta};
+ 
+ /// What a fully transparent texel is uploaded as.
+diff --git a/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs b/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
+index a63ede17a0dbed4946219ed1e430d872a1ef9f90..6f9e6d0f31ebde98a5f77bb313aeb8d6a4413d06 100644
+--- a/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
++++ b/upstream/photocraft/crates/ui-egui/src/tools/type_tool/ime_tests.rs
+@@ -1034,9 +1034,10 @@ fn reset_harness(app: PhotocraftApp) -> egui_kittest::Harness<'static, ResetHarn
+         })
+         .build_ui_state(
+             |ui, state: &mut ResetHarness| {
+-                let mut frame = eframe::Frame::_new_kittest();
+-                state.app.logic_frame(ui.ctx(), &mut frame);
+-                state.app.ui_frame(ui, &mut frame);
++                // The host seam takes `Option<&ParentFrame>`: a shell without eframe has no window.
++                let frame = eframe::Frame::_new_kittest();
++                state.app.logic_frame(ui.ctx(), Some(&frame));
++                state.app.ui_frame(ui, Some(&frame));
+                 if state.stock {
+                     egui::Window::new("Reset font fixture").show(ui.ctx(), |ui| {
+                         let button = ui.make_persistent_id(egui::IdSalt::new("reset-font"));
+diff --git a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
+index c69a3ec099d9ff4ce130f32ebd4c8550f673fe0c..dd74fbb1914c22cea2b7da8df5995ac07fd2f3bc 100644
+--- a/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
++++ b/upstream/photocraft/crates/ui-egui/src/updates_ui.rs
+@@ -9,7 +9,7 @@ pub(crate) struct Runtime {
+     startup_checked: bool,
+     notified_version: Option<String>,
+     /// The startup prompt and the self-update behind it (desktop).
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+     updater: craft_update::updater::Updater,
+ }
+ 
+@@ -18,14 +18,14 @@ impl Default for Runtime {
+         Self {
+             startup_checked: false,
+             notified_version: None,
+-            #[cfg(not(target_arch = "wasm32"))]
++            #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+             updater: craft_update::updater::Updater::new(&crate::UPDATE_APP, photocraft_engine::build_info::VERSION),
+         }
+     }
+ }
+ 
+ /// The release the engine found, as `craft-update` knows it.
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ fn release_of(found: &photocraft_engine::updates_cmds::Release) -> craft_update::Release {
+     craft_update::Release {
+         tag: format!("v{}", found.version),
+@@ -63,7 +63,7 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     {
+         app.updates_rt.notified_version = Some(release.version.clone());
+         app.ui.updates_open = true;
+-        #[cfg(not(target_arch = "wasm32"))]
++        #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+         app.updates_rt.updater.offer(release_of(release));
+     }
+     if app.session.updates.check.is_none() {
+@@ -80,10 +80,10 @@ pub(crate) fn tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     }
+ }
+ 
+-#[cfg(target_arch = "wasm32")]
++#[cfg(any(target_arch = "wasm32", not(feature = "self-update")))]
+ pub(crate) fn show(_app: &mut PhotocraftApp, _ctx: &egui::Context) {}
+ 
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+     let mut download: Option<String> = None;
+     {
+@@ -122,7 +122,7 @@ pub(crate) fn show(app: &mut PhotocraftApp, ctx: &egui::Context) {
+ 
+ /// The engine's check state as the result dialog shows it. An available release goes to the
+ /// startup prompt, so the dialog draws nothing for it.
+-#[cfg(not(target_arch = "wasm32"))]
++#[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+ fn check_status(status: &Status) -> craft_update::updater::Status {
+     use craft_update::updater::Status as Shown;
+     match status {
+@@ -247,7 +247,7 @@ mod tests {
+     }
+ 
+     #[test]
+-    #[cfg(not(target_arch = "wasm32"))]
++    #[cfg(all(not(target_arch = "wasm32"), feature = "self-update"))]
+     fn startup_update_prompt_appears_and_can_be_dismissed() {
+         let (mut app, _, sender) = app();
+         let ctx = egui::Context::default();
 diff --git a/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs b/upstream/photocraft/crates/ui-egui/src/window_fullscreen.rs
 new file mode 100644
 index 0000000000000000000000000000000000000000..73fe403dfea09d2c078e91f1f386a1225366aab8
