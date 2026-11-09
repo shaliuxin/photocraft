@@ -140,7 +140,24 @@ struct Index {
   private dropping: NativeDropAdapter = new NativeDropAdapter(this.context.cacheDir,
     (key: string): void => { this.getUIContext().getDragController().cancelDataLoading(key); },
     (name: string, fd: number): void => { native.openFile(name, fd); });
-  private ime: NativeImeAdapter = new NativeImeAdapter((message: string): void => native.input(message));
+  // 输入法锚点持焦期间接管硬件键盘，需要自己维护修饰键状态（KeyEvent 的
+  // getModifierKeyState 在部分 SDK 版本上不可用）。
+  private keyCtrl: boolean = false;
+  private keyShift: boolean = false;
+  private keyAlt: boolean = false;
+  private ime: NativeImeAdapter = new NativeImeAdapter((message: string): void => native.input(message), {
+    // 输入法服务只把「已获焦的 ArkUI 编辑组件」当作输入代理，attach 前必须把焦点交给隐藏锚点，
+    // 否则 attach 虽成功，系统日志报 OnAttachOptionsChanged failed to get uv entry，
+    // 客户端数秒后被静默断开（表现为只能输入一次中文，之后输入法栏不再弹出）。
+    focusAnchor: (): void => {
+      try {
+        this.getUIContext().getFocusController().requestFocus('photocraft-ime-anchor');
+      } catch (error) {
+        console.warn(`PhotoCraft IME anchor focus failed: ${(error as Error).message}`);
+      }
+    },
+    restoreEditor: (): void => { this.restoreEditorFocus(); }
+  });
   private printing: NativePrintAdapter = new NativePrintAdapter(this.context,
     (message: string): void => { if (this.alive) { this.failure = message; } });
   private readonly onDisplayChange = (_id: number): void => { this.sendDisplayRotation(); };
@@ -615,9 +632,42 @@ struct Index {
         .onDrop((event: DragEvent): void => { this.dropImages(event); }, { disableDataPrefetch: true })
         .onHoverMove((event: HoverEvent): void => { this.sendPenHoverMove(event); })
         .onHover((isHover: boolean): void => { this.sendPenHoverLeave(isHover); })
-        .id('photocraft-editor').focusable(true).defaultFocus(true).focusOnTouch(true)
+        // 不设 focusOnTouch：打字期间触摸画布若把焦点抢回 XComponent（非编辑代理），
+        // 输入法绑定会被断开导致键盘收起；指针事件不经 ArkUI 焦点，不受影响。
+        .id('photocraft-editor').focusable(true).defaultFocus(true)
         .onBlur(() => { this.cursor.reset(); let input = new NativeInput(); input.kind = 'blur'; native.input(JSON.stringify(input)); })
       }
+      // 隐藏的 IME 锚点：鸿蒙输入法框架只认「获得焦点的编辑组件」为可输入位置，
+      // 官方自定义编辑框方案用普通 Text + requestFocus 充当编辑代理。
+      // 1×1 全透明且不参与命中测试，用户不可见；attach 前必须先聚焦它。
+      Text('')
+        .id('photocraft-ime-anchor')
+        .focusable(true)
+        .width(1).height(1)
+        .opacity(0)
+        .hitTestBehavior(HitTestMode.None)
+        .onKeyEvent((event: KeyEvent): boolean => {
+          // 锚点持焦期间（输入法绑定中）转发硬件键盘事件，保证快捷键与特殊键仍可用。
+          if (!this.alive) { return false; }
+          let down: boolean = event.type === KeyType.Down;
+          // 修饰键自己跟踪：KeyEvent.getModifierKeyState 在部分 SDK 版本上不可用。
+          if (event.keyCode === 2072 || event.keyCode === 2073) { this.keyCtrl = down; }
+          else if (event.keyCode === 2047 || event.keyCode === 2048) { this.keyShift = down; }
+          else if (event.keyCode === 2049 || event.keyCode === 2050) { this.keyAlt = down; }
+          let input = new NativeInput();
+          input.kind = 'key';
+          input.code = event.keyCode;
+          input.action = down ? 0 : 1;
+          input.ctrl = this.keyCtrl;
+          input.shift = this.keyShift;
+          input.alt = this.keyAlt;
+          native.input(JSON.stringify(input));
+          return true;
+        })
+        .onBlur((): void => {
+          // 焦点离开锚点时复位修饰键，避免 Ctrl/Shift 状态粘住。
+          this.keyCtrl = false; this.keyShift = false; this.keyAlt = false;
+        })
       if (this.startupVisible) {
         Column() {
           Column({ space: 18 }) {

@@ -25,6 +25,14 @@ class ImeInput {
   constructor(kind: string, focus: string) { this.kind = kind; this.focus = focus; }
 }
 
+// 焦点由宿主页面持有：输入法服务只把「已获焦的 ArkUI 编辑组件」当作输入代理。
+// attach 前必须把焦点交给隐藏锚点，否则客户端会在数秒后被系统静默断开
+// （日志表现为 OnAttachOptionsChanged, failed to get uv entry + 只能输入一次）。
+export interface ImeFocusHost {
+  focusAnchor: () => void;
+  restoreEditor: () => void;
+}
+
 // Bind the system IME to the focused egui editor, without introducing an ArkUI text field.
 export class NativeImeAdapter {
   private controller: inputMethod.InputMethodController = inputMethod.getController();
@@ -37,11 +45,22 @@ export class NativeImeAdapter {
   private shownRequest: number = 0;
   private originX: number = 0;
   private originY: number = 0;
+  private logged: string = '';
   private emit: (message: string) => void;
+  private host: ImeFocusHost;
 
-  constructor(emit: (message: string) => void) { this.emit = emit; }
+  constructor(emit: (message: string) => void, host: ImeFocusHost) {
+    this.emit = emit;
+    this.host = host;
+  }
   update(state: NativeImeState): void {
     this.state = state;
+    let signature: string = `${state.active}/${state.focus}/${state.showRequest}`;
+    if (signature !== this.logged) {
+      this.logged = signature;
+      console.info(`PhotoCraft IME state active=${state.active} show=${state.showRequest} ` +
+        `attached=${this.attached} focus=${state.focus}`);
+    }
     this.revision++;
     this.reconcile();
   }
@@ -60,6 +79,9 @@ export class NativeImeAdapter {
     this.emit(JSON.stringify(input));
   }
   private listen(): void {
+    // 监听只注册一次：反复 off/on 会让输入法服务收到 callback 为空的注销请求
+    // （ImsaKit: UnRegisterListener, callback is nullptr），并可能吞掉后续注册。
+    if (this.listening) { return; }
     this.listening = true;
     this.controller.on('insertText', (text: string): void => {
       this.send('ime_commit', text); this.preview = '';
@@ -88,18 +110,52 @@ export class NativeImeAdapter {
       if (this.preview.length > 0) { this.send('ime_commit', this.preview); this.preview = ''; }
     });
   }
-  private unlisten(): void {
-    if (!this.listening) { return; }
-    this.listening = false;
-    this.controller.off('insertText'); this.controller.off('deleteLeft'); this.controller.off('deleteRight');
-    this.controller.off('sendFunctionKey'); this.controller.off('moveCursor'); this.controller.off('selectByRange');
-    this.controller.off('getLeftTextOfCursor'); this.controller.off('getRightTextOfCursor');
-    this.controller.off('getTextIndexAtCursor'); this.controller.off('setPreviewText');
-    this.controller.off('finishTextPreview');
-  }
   private cursor(): inputMethod.CursorInfo {
     return { left: this.originX + this.state.x, top: this.originY + this.state.y,
       width: this.state.width, height: this.state.height };
+  }
+  private fail(step: string, error: Object): void {
+    let failure = error as BusinessError;
+    console.error(`PhotoCraft IME ${step} failed: ${failure.code} ${failure.message}`);
+  }
+  private async attachNow(focus: string): Promise<void> {
+    // 顺序不可颠倒：先让锚点获焦（系统据此认定这是可输入位置），再 attach 绑定时注册监听。
+    this.host.focusAnchor();
+    let requested: number = this.state.showRequest;
+    try {
+      await this.controller.attach(requested > 0, {
+        inputAttribute: { textInputType: this.state.password ? inputMethod.TextInputType.VISIBLE_PASSWORD : inputMethod.TextInputType.TEXT,
+          enterKeyType: inputMethod.EnterKeyType.NEWLINE },
+        cursorInfo: this.cursor(), selection: { start: this.state.start, end: this.state.end }
+      });
+      this.attached = focus;
+      this.shownRequest = requested;
+      this.preview = '';
+      this.listen();
+      console.info(`PhotoCraft IME attached show=${requested > 0}`);
+    } catch (error) {
+      this.fail('attach', error as Object);
+    }
+  }
+  private async showKeyboard(): Promise<void> {
+    // 断线自愈：客户端被系统断开时 showTextInput 抛 12800009，
+    // 此时清掉本地绑定态让下一轮 reconcile 重新 attach。
+    this.host.focusAnchor();
+    try {
+      await this.controller.showTextInput();
+    } catch (error) {
+      this.fail('show', error as Object);
+      if ((error as BusinessError).code === 12800009) {
+        this.attached = '';
+        this.shownRequest = 0;
+        this.revision++;
+      }
+    }
+  }
+  private wait(ms: number): Promise<void> {
+    return new Promise<void>((resolve: () => void): void => {
+      setTimeout((): void => { resolve(); }, ms);
+    });
   }
   private async reconcile(): Promise<void> {
     if (this.running) { return; }
@@ -110,32 +166,41 @@ export class NativeImeAdapter {
         revision = this.revision;
         let focus: string = this.state.active ? this.state.focus : '';
         if (this.attached.length > 0 && this.attached !== focus) {
-          this.unlisten(); this.preview = '';
-          await this.controller.detach(); this.attached = ''; this.shownRequest = 0;
+          // 单帧抖动（系统面板切换、一次空输出）不立刻断开：等一拍确认仍失焦再解绑，
+          // 否则键盘会被反复收掉，表现为「只能输入一次」。
+          await this.wait(300);
+          if (revision !== this.revision) { continue; }
+          this.preview = '';
+          this.attached = '';
+          this.shownRequest = 0;
+          try {
+            await this.controller.detach();
+            console.info('PhotoCraft IME detached');
+          } catch (error) {
+            this.fail('detach', error as Object);
+          }
+          // 绑定结束后把焦点还给 XComponent，硬件快捷键才能继续到达编辑器。
+          this.host.restoreEditor();
         }
         if (focus.length > 0 && this.attached.length === 0) {
-          let requested: number = this.state.showRequest;
-          await this.controller.attach(requested > 0, {
-            inputAttribute: { textInputType: this.state.password ? inputMethod.TextInputType.VISIBLE_PASSWORD : inputMethod.TextInputType.TEXT,
-              enterKeyType: inputMethod.EnterKeyType.NEWLINE },
-            cursorInfo: this.cursor(), selection: { start: this.state.start, end: this.state.end }
-          });
-          this.attached = focus;
-          this.shownRequest = requested;
-          this.listen();
+          await this.attachNow(focus);
+          if (this.attached.length === 0 && this.state.active) {
+            // 锚点尚未真正获焦时 attach 会抛 12800003：稍等重试一次。
+            await this.wait(80);
+            await this.attachNow(this.state.focus);
+          }
         }
         if (this.state.active && this.attached === this.state.focus) {
           if (this.state.showRequest > this.shownRequest) {
             this.shownRequest = this.state.showRequest;
-            await this.controller.showTextInput();
+            await this.showKeyboard();
           }
           await this.controller.changeSelection(this.state.text, this.state.start, this.state.end);
           await this.controller.updateCursor(this.cursor());
         }
       } while (revision !== this.revision);
     } catch (error) {
-      let failure = error as BusinessError;
-      console.error(`Native IME: ${failure.code} ${failure.message}`);
+      this.fail('reconcile', error as Object);
     } finally { this.running = false; }
   }
 }

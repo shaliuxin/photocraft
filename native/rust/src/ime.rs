@@ -115,10 +115,14 @@ impl ImeSync {
         output: &egui::PlatformOutput,
         app: Option<&photocraft_ui_egui::PhotocraftApp>,
     ) -> Option<String> {
-        // The canvas Type tool publishes IMEOutput without an egui TextEdit widget.
+        // The canvas Type tool publishes IMEOutput without an egui TextEdit widget. Do not tell
+        // it apart by `rect == cursor_rect`: that only holds while the layer is empty, and a
+        // commit gives the layer real bounds, which dropped the canvas route right after the
+        // first composed word (the "IME works once" report). A missing focused egui text edit
+        // is the real discriminator.
         let canvas = app
             .and_then(|a| a.ui.text_edit.as_ref())
-            .filter(|_| output.ime.as_ref().is_some_and(|i| i.rect == i.cursor_rect))
+            .filter(|_| output.ime.is_some() && !ctx.text_edit_focused())
             .map(|edit| (edit.layer, edit.session.clone()));
         let focused = if canvas.is_some() {
             None
