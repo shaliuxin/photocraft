@@ -106,6 +106,41 @@ Also re-check any **new upstream module** that reaches for `eframe::wgpu` direct
 has `eframe` optional and links `wgpu` itself, so such a file must use `wgpu::*` (v0.21.0's new
 `canvas/gpu_canvas/compositor_build.rs` needed exactly this).
 
+### v0.21.0 → v0.22.0: two real conflicts, no dependency drift
+
+Three-way replay produced 33 clean merges, 4 carried new files, and only **2 files / 2 conflicts**:
+
+* `crates/ui-egui/src/app.rs` — upstream added `captures.cancel_all` / `finish_captures` to
+  `on_exit`. Keep the host's one-line `self.host_exit();`: `app/host.rs` already performs
+  save-on-exit, screenshot cancellation and capture finishing, so no upstream behaviour is lost.
+* `crates/ui-egui/src/updates_ui.rs` — v0.22.0 grew the self-update flow into a state machine
+  (`requested`, `last_update`, `check_now`, `dismiss_status`). Taking either side wholesale is
+  wrong: take the upstream logic and **re-apply the host's feature-gate transformation across the
+  whole file**. Every self-update block must be
+  `all(not(target_arch = "wasm32"), feature = "self-update")` and the wasm fallback
+  `any(target_arch = "wasm32", not(feature = "self-update"))`. A single bare `not(wasm32)` leaks
+  `craft_update` into the host build, which references ui-egui with `default-features = false`.
+  `Services.last_update` is an ungated plain field whose type does not mention `craft_update`, so
+  it stays exactly as upstream ships it.
+
+Dependencies did not move (egui 0.37.0 / wgpu 30.0.1 / winit 0.30.13), so `wgpu-hal-30.0.1`
+needed no re-vendoring. The only manifest change was 4 new `hayro-*` lines in upstream's
+`[patch.crates-io]`, picked up by `pins --write`.
+
+Two verification traps worth remembering:
+
+* **`cargo check` can hang on git fetches** even when every revision is already in the cargo git
+  cache (the v0.22.0 hayro rev was cached, yet a stray `git-remote-https` hung for 55 minutes).
+  Use `cargo check --offline`; it either resolves from cache or fails fast with a clear missing
+  dependency instead of stalling.
+* **Checking the adapter on the Windows host triple produces false errors.** `std::os::fd` and
+  `crate::stylus` are gated behind `target_env = "ohos"`, so a plain
+  `cargo check --manifest-path native/rust/Cargo.toml` reports 3 errors that have nothing to do
+  with the merge. Use `--target aarch64-unknown-linux-ohos` for the real verdict.
+
+After regenerating the series (a-side = pristine v0.22.0, 39 files, one owner patch per file),
+applying the four patches in order on pristine v0.22.0 reproduced all 3,141 files byte-for-byte.
+
 ## Port layers
 
 The port's own code is layered so each layer is one patch and one verification:

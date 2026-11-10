@@ -3,7 +3,7 @@ resolver = "3"
 
 [package]
 name = "photocraft-hmos"
-version = "0.21.0"
+version = "0.22.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -45,6 +45,11 @@ eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc79968157
 egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
 winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
+# craft-pdf's vendored Hayro trees: consumers patch the same craft-libs revision (crates/pdf README).
+hayro = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
+hayro-syntax = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
+hayro-interpret = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
+hayro-jbig2 = { git = "https://github.com/storytold/craft-libs", rev = "1b34eba41e62138fc2438d2734523b302840b45d" }
 wgpu-hal = { path = "../../third_party/wgpu-hal-30.0.1" }
 
 [profile.dev]

@@ -89,7 +89,7 @@ index 33fb3d351f6dc2ccdfec19a26b650dce3b490509..3056c3eb4aff88e53d5eb2b6ac4391e4
      fn scan_of_nothing_is_empty() {
          assert!(scan(&[]).is_empty());
 diff --git a/upstream/photocraft/crates/engine/src/prefs.rs b/upstream/photocraft/crates/engine/src/prefs.rs
-index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbcffbc4fe7 100644
+index 95566aa043624fcb2e4ac3ca32a2f2d82ee40a89..6b3c574668ab9d2150a38373fe5a7f830534f5a6 100644
 --- a/upstream/photocraft/crates/engine/src/prefs.rs
 +++ b/upstream/photocraft/crates/engine/src/prefs.rs
 @@ -56,10 +56,10 @@ choice!(TypeUnit { Points = "points", Pixels = "pixels", Millimeters = "mm" } de
@@ -106,7 +106,7 @@ index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbc
  choice!(CanvasColor { Default = "default", Black = "black", DarkGray = "darkGray", MediumGray = "mediumGray", LightGray = "lightGray", Custom = "custom" } default Default);
  choice!(CanvasBorder { DropShadow = "dropShadow", Line = "line", None = "none" } default DropShadow);
  choice!(UiScale { Auto = "auto", P75 = "75", P80 = "80", P85 = "85", P90 = "90", P95 = "95", P100 = "100", P105 = "105", P110 = "110", P115 = "115", P120 = "120", P125 = "125", P150 = "150", P175 = "175", P200 = "200", P250 = "250", P300 = "300" } default Auto);
-@@ -1511,6 +1511,13 @@ impl Session {
+@@ -1609,6 +1609,13 @@ impl Session {
          if !v.is_object() {
              return Err("preferences: expected a JSON object".into());
          }
@@ -120,7 +120,7 @@ index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbc
          // Files before version 2 hold Use Shift Key for Tool Switch off because that was the
          // default when they were written: every key is saved, chosen or not. Like Photoshop it is
          // on by default now (#3528), so those files take the new default (#5647: a tool letter
-@@ -1528,10 +1535,10 @@ impl Session {
+@@ -1626,10 +1633,10 @@ impl Session {
              && let Some(theme) = interface.get("theme").and_then(Value::as_str).and_then(Theme::parse)
          {
              let (mode, slot) = match theme {
@@ -133,7 +133,7 @@ index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbc
                      ("light", "lightTheme")
                  }
              };
-@@ -1682,6 +1689,22 @@ impl Session {
+@@ -1780,6 +1787,22 @@ impl Session {
                      next.interface.light_theme = LightTheme::SoftLight;
                      next.interface.appearance_mode = AppearanceMode::Light;
                  }
@@ -157,7 +157,7 @@ index ee61af791ca3ea00ecb1cf3329708b82b68b60ed..6d2702c01ea5c9a0dbf9056008d1cbbc
          }
          self.prefs.edit(|p| *p = next);
 diff --git a/upstream/photocraft/crates/engine/src/prefs/validate.rs b/upstream/photocraft/crates/engine/src/prefs/validate.rs
-index f9c0b9f8055f9af2c553ec69d227b0622c069d1b..2e776323ff9646c60eb0a2ccaa5a73d8932ce3fb 100644
+index ccbf2cd6ba8e9965eb53212dc0c070ad72b0647e..13a8c498d24567d2fba81c7efccd340f01e97fac 100644
 --- a/upstream/photocraft/crates/engine/src/prefs/validate.rs
 +++ b/upstream/photocraft/crates/engine/src/prefs/validate.rs
 @@ -48,13 +48,27 @@ pub const HIDDEN_UNTIL_IMPLEMENTED: &[&str] = &[
@@ -192,12 +192,12 @@ index f9c0b9f8055f9af2c553ec69d227b0622c069d1b..2e776323ff9646c60eb0a2ccaa5a73d8
  
  /// Whether a graphics adapter called `name` is the one `performance.gpuAdapter` (`wanted`) asks
 diff --git a/upstream/photocraft/crates/format/src/atomic.rs b/upstream/photocraft/crates/format/src/atomic.rs
-index a454416dff434ccc5933bf1a504057c3f63ead52..bde19ac1161bab5a8be897af3eac4405c10ac21c 100644
+index 09800b34b43a3fe39950e6ba1ca34d838464e154..d08e8e5d21cba2dedbacf4c7a304cf1a61e2d3ec 100644
 --- a/upstream/photocraft/crates/format/src/atomic.rs
 +++ b/upstream/photocraft/crates/format/src/atomic.rs
-@@ -22,6 +22,10 @@
- //!   (`F_FULLFSYNC`), which SMB shares and some virtual file systems refuse while a plain `fsync`
- //!   works. [`sync_file`] falls back to the plain one there (#1336).
+@@ -25,6 +25,10 @@
+ //!   server that hides dot files marks one hidden when it is created, the mark survives the
+ //!   rename, and the saved document then doesn't show in Finder (#11624). See [`temp_name`].
  //!
 +//! On HarmonyOS, a registered host writer publishes public document paths through CoreFileKit
 +//! after staging complete bytes in the private sandbox. Public folders do not support POSIX
@@ -206,7 +206,7 @@ index a454416dff434ccc5933bf1a504057c3f63ead52..bde19ac1161bab5a8be897af3eac4405
  //! On the web there is no file system: writes go through the platform services (downloads), so
  //! this module is never reached there; on `wasm32` every call returns the `std` "unsupported"
  //! error.
-@@ -39,6 +43,20 @@ use std::io::{self, Seek, Write};
+@@ -42,6 +46,20 @@ use std::io::{self, Seek, Write};
  use std::path::{Path, PathBuf};
  use std::sync::atomic::{AtomicU64, Ordering};
  
@@ -227,7 +227,7 @@ index a454416dff434ccc5933bf1a504057c3f63ead52..bde19ac1161bab5a8be897af3eac4405
  /// The file-system steps [`atomic_write_with`] performs. [`RealFs`] is the real thing; tests
  /// wrap it to inject failures.
  pub trait AtomicFs {
-@@ -217,12 +235,18 @@ impl RenameRetry {
+@@ -220,12 +238,18 @@ impl RenameRetry {
  /// Errors keep their [`io::ErrorKind`]. Before replacement they say the original is unchanged;
  /// a Windows publication-flush error says the new file may not survive a power loss.
  pub fn atomic_write(path: &Path, bytes: &[u8]) -> io::Result<()> {
@@ -342,10 +342,10 @@ index 1fe0f12534aaf00b05cbaeb6fc6846881015bffc..1285df79ae2549ba1eda4e2bbf921a1e
      fn classify_chars() {
          let order = script_order(Some("en"));
 diff --git a/upstream/photocraft/crates/ui-egui/src/i18n.rs b/upstream/photocraft/crates/ui-egui/src/i18n.rs
-index ada37cd0cf4f32f7f8c1a51ef329c87d6a4289a3..b69b15a5da8d637f006dd87f1ba9f2960971c0a0 100644
+index b0de64ffffce7ad86cee379f699455db2f42fd0c..dc28f3bb290b58c6fa9e5580e081f71273f9cc25 100644
 --- a/upstream/photocraft/crates/ui-egui/src/i18n.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/i18n.rs
-@@ -27,6 +27,11 @@ mod system;
+@@ -28,6 +28,11 @@ mod system;
  pub(crate) use system::with_decimal_separator;
  pub use system::{decimal_separator, system_lang};
  
@@ -358,7 +358,7 @@ index ada37cd0cf4f32f7f8c1a51ef329c87d6a4289a3..b69b15a5da8d637f006dd87f1ba9f296
  use std::sync::OnceLock;
  
 diff --git a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs b/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
-index b2bef186e99d191d51ceb61b0e23d712aa7c5b26..8fdcccf10d0c73fec3903123b0bc1640ce7b6697 100644
+index b660029cdbf909f75f5f01737d8de98673586349..63e00229595d66366ea6c84ffeb80b9d83e3b3ee 100644
 --- a/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/i18n/system.rs
 @@ -1,10 +1,18 @@
@@ -510,7 +510,7 @@ index b2bef186e99d191d51ceb61b0e23d712aa7c5b26..8fdcccf10d0c73fec3903123b0bc1640
  }
  
  /// The decimal separator of the system's number format (Windows: Region › Decimal symbol), when it
-@@ -220,4 +328,49 @@ mod tests {
+@@ -221,4 +329,49 @@ mod tests {
          assert!(detected.len() <= MAX_SYSTEM_TAGS);
          assert!(detected.iter().all(|tag| !tag.is_empty() && tag.len() <= MAX_SYSTEM_TAG_BYTES));
      }

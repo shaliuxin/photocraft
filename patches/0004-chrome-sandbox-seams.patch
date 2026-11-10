@@ -1,5 +1,5 @@
 diff --git a/upstream/photocraft/crates/ui-egui/src/canvas.rs b/upstream/photocraft/crates/ui-egui/src/canvas.rs
-index 2acba730f4b1a19853d57310f4b00e41894f1082..5c33c0197474a51450b9bad60e15bdb96aa36ba8 100644
+index c6ff22853fe42db8cda2bccbe1aaf7eab148aab1..f6678f2658de9005cdb87f92de91be4c3cf9b2e5 100644
 --- a/upstream/photocraft/crates/ui-egui/src/canvas.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/canvas.rs
 @@ -13,6 +13,10 @@ use crate::PhotocraftApp;
@@ -14,10 +14,10 @@ index 2acba730f4b1a19853d57310f4b00e41894f1082..5c33c0197474a51450b9bad60e15bdb9
  pub(crate) mod background_redraw;
  pub(crate) mod cam_preview;
 diff --git a/upstream/photocraft/crates/ui-egui/src/file_open.rs b/upstream/photocraft/crates/ui-egui/src/file_open.rs
-index 865f65d7efece56b9651ab8e4d65c1a073a8179e..c00c7fb609693df1601ebfcf469ae6ddbeac9053 100644
+index 38965309777c21fc7302492ca7533dc9f4c505ff..2acfefb36d726a00d06c0b3dfe6275729c31bdc3 100644
 --- a/upstream/photocraft/crates/ui-egui/src/file_open.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/file_open.rs
-@@ -357,7 +357,7 @@ impl PhotocraftApp {
+@@ -363,7 +363,7 @@ impl PhotocraftApp {
      }
  
      /// Where a drop at `at` lands. Over a window or dialog it's neither the canvas nor the tabs.
@@ -27,10 +27,10 @@ index 865f65d7efece56b9651ab8e4d65c1a073a8179e..c00c7fb609693df1601ebfcf469ae6dd
              return DropTarget::Elsewhere;
          };
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs b/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
-index b7e8e812d72340462cd89958939dea1bbc4b1134..75129dd6aef0ad370bf649e6d9d05709d8968a8a 100644
+index cbe858eba6820f7a9e09f6afc9c74ab98eaa3c82..647d026bd54efbbb05fb2fd351c2bca963ce4933 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/invoke.rs
-@@ -709,6 +709,14 @@ fn invoke_window_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str)
+@@ -730,6 +730,14 @@ fn invoke_window_command(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str)
              crate::prefs_ui::cycle_appearance(app, ctx);
              Some(Ok(Value::Null))
          }
@@ -46,10 +46,10 @@ index b7e8e812d72340462cd89958939dea1bbc4b1134..75129dd6aef0ad370bf649e6d9d05709
              Some(crate::prefs_ui::step_brightness(app, ctx, id == "view.lightenInterface").map(|()| json!({"theme": app.ui.theme.id()})))
          }
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
-index f1e9b2770feb31b87632f94f837813c3f1254393..7e48cddd910b6fc00d30296b36bc7e65b808a010 100644
+index aef68d2dd6a28f09fe63e47d82eba836e0991eb8..33e19d2adcb6fb566ba9e264989f2a7cca63cdd7 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/dispatch.rs
-@@ -365,6 +365,13 @@ fn run(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Res
+@@ -366,6 +366,13 @@ fn run(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, p: &Value) -> Res
          o.screen_mode = next.to_string();
          // Tab's view of the chrome (#6760) lasts only while in Full Screen Mode.
          app.ui.panels.full_screen_chrome = false;
@@ -64,7 +64,7 @@ index f1e9b2770feb31b87632f94f837813c3f1254393..7e48cddd910b6fc00d30296b36bc7e65
          let (full_screen, maximized) = ctx.input(|i| (i.viewport().fullscreen.unwrap_or(false), i.viewport().maximized.unwrap_or(false)));
          let was_maximized = ctx.data(|d| d.get_temp::<bool>(was_maximized_id())).unwrap_or(false);
 diff --git a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
-index 8b80767e6f31c1c933740ad94e136320472b843f..1ae6b7100123d80f78e6c08185363b16a3641ad8 100644
+index 67c823b5c113d3e30a21fc158b64cc258ee6b9ed..bddeb79b102b7964976c3cc50fc3ca82095cd481 100644
 --- a/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/menus/view_cmds/tests.rs
 @@ -108,6 +108,34 @@ fn show_snap_extras_and_screen_modes_are_state() {
@@ -179,10 +179,10 @@ index 69bb92614208c413f3ef1d024dde1d49880bc316..02fab8cb050cfb1a03958358b49f8a57
      }
  }
 diff --git a/upstream/photocraft/crates/ui-egui/src/services.rs b/upstream/photocraft/crates/ui-egui/src/services.rs
-index ab5efac975edcd61f54f45ae4bb97b03f572cc4c..c52a1f7583cde73d2c67566ed557dc330192e4b9 100644
+index ffc33bb94c5ea75eba060881ea0aa4c5fc956d41..742ba74b99bb3d31c877a6744718efe85139cde8 100644
 --- a/upstream/photocraft/crates/ui-egui/src/services.rs
 +++ b/upstream/photocraft/crates/ui-egui/src/services.rs
-@@ -213,6 +213,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
+@@ -235,6 +235,19 @@ pub(crate) fn plain_raster(doc: &Document) -> Option<&photocraft_doc::Layer> {
  /// Encode a document: (file bytes, warnings about anything approximated or dropped).
  pub type ExportFn = Box<dyn Fn(&Document, &str, &ExportSettings) -> Result<(Vec<u8>, Vec<String>), String>>;
  
@@ -202,7 +202,7 @@ index ab5efac975edcd61f54f45ae4bb97b03f572cc4c..c52a1f7583cde73d2c67566ed557dc33
  pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
  
  /// What a file on disk looked like when a document last read or wrote it: File › Save asks
-@@ -412,6 +425,38 @@ pub struct Services {
+@@ -441,6 +454,38 @@ pub struct Services {
      pub open_external_svg: Option<OpenExternalSvgFn>,
      /// User-initiated desktop/browser pixel sampling.
      pub screen_pick: Option<screen_picker::Service>,

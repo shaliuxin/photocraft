@@ -20,6 +20,9 @@ const result = ts.transpileModule(source, { compilerOptions: { target: ts.Script
 const moduleShim = { exports: {} };
 vm.runInNewContext(result.outputText, {
   module: moduleShim, exports: moduleShim.exports, console,
+  // The adapter's debounce calls setTimeout; resolve it as a microtask so the test is timing-free.
+  setTimeout: fn => { Promise.resolve().then(fn); return 0; },
+  clearTimeout: () => {},
   require: name => {
     if (name === '@kit.IMEKit') return { inputMethod: { getController: () => controller, TextInputType: { TEXT: 0, VISIBLE_PASSWORD: 7 }, EnterKeyType: { NEWLINE: 0 } } };
     if (name === '@kit.BasicServicesKit') return {};
@@ -27,8 +30,16 @@ vm.runInNewContext(result.outputText, {
   }
 });
 const { NativeImeAdapter, NativeImeState } = moduleShim.exports;
-const adapter = new NativeImeAdapter(message => messages.push(JSON.parse(message)));
-const settle = async () => { for (let i = 0; i < 12; i++) await Promise.resolve(); };
+// The adapter takes a focus host (the ArkUI page that owns the hidden anchor). Track its calls
+// separately so the controller-call assertions below stay clean.
+const hostCalls = [];
+const host = { focusAnchor: () => hostCalls.push('focusAnchor'), restoreEditor: () => hostCalls.push('restoreEditor') };
+const adapter = new NativeImeAdapter(message => messages.push(JSON.parse(message)), host);
+const settle = async () => {
+  for (let i = 0; i < 50; i++) await Promise.resolve();
+  await new Promise(r => setTimeout(r, 0));
+  for (let i = 0; i < 50; i++) await Promise.resolve();
+};
 const state = (focus = 'first') => Object.assign(new NativeImeState(), {
   active: true, focus, text: '你好😀', start: 2, end: 4, x: 15, y: 20, width: 1, height: 24, showRequest: 1
 });
@@ -36,6 +47,8 @@ async function main() {
   adapter.setOrigin(10, 80);
   adapter.update(state());
   assert.equal(calls.filter(c => c[0] === 'attach').length, 1);
+  // The Chinese-IME fix hinges on the anchor gaining focus before attach; guard that ordering.
+  assert.equal(hostCalls[0], 'focusAnchor');
   adapter.update(state()); // Updates during attach must not attach twice.
   resolveAttach(); await settle();
   assert.equal(calls.filter(c => c[0] === 'attach').length, 1);
@@ -54,12 +67,15 @@ async function main() {
   callbacks.get('selectByRange')({ start: 0, end: 2 });
   assert.equal(messages.at(-1).end, 2);
   adapter.stop(); await settle();
-  assert.equal(callbacks.size, 0);
+  // Listeners are registered once and never torn down (off/on churn drops the IME binding); assert they persist.
+  assert.ok(callbacks.has('insertText'), 'listeners persist across detach (registered once)');
   assert.equal(calls.filter(c => c[0] === 'detach').length, 1);
+  // Focus is handed back to the editor on detach so hardware keys keep reaching it.
+  assert.ok(hostCalls.includes('restoreEditor'));
   // A focus lost while attach is pending must detach as soon as attach finishes.
   adapter.update(state('second'));
   adapter.stop(); resolveAttach(); await settle();
-  assert.equal(callbacks.size, 0);
+  assert.ok(callbacks.has('insertText'), 'listeners stay registered across a re-attach (no off/on churn)');
   assert.equal(calls.filter(c => c[0] === 'detach').length, 2);
   // Help/search automatic focus opens the keyboard on attachment, without a second show.
   adapter.update(state('help'));
