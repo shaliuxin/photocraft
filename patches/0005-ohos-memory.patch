@@ -1,0 +1,128 @@
+diff --git a/upstream/photocraft/crates/raster/src/memory/system.rs b/upstream/photocraft/crates/raster/src/memory/system.rs
+index 998720b8b523180530699a0b96567c97262094e4..1492c6db0a944ea913761144aa7cd440f9b08257 100644
+--- a/upstream/photocraft/crates/raster/src/memory/system.rs
++++ b/upstream/photocraft/crates/raster/src/memory/system.rs
+@@ -5,6 +5,11 @@
+ //! - Linux: `/proc/meminfo` `MemAvailable`, capped by the process's memory cgroup (v2
+ //!   `memory.max`/`memory.high` and v1 `memory.limit_in_bytes`/`memsw`, with every visible
+ //!   ancestor); a cgroup that exists but cannot be read fails closed.
++//! - OpenHarmony (`*-linux-ohos`): `/proc/meminfo` `MemAvailable`, capped by a conservative
++//!   per-app ceiling. OHOS mounts its cgroup v1 controllers at `/dev/memcg` and friends with
++//!   no controller name in `mountinfo`, and hides them from an app sandbox, so the generic
++//!   Linux walk reports an unreadable constraint and fails closed with `Some(0)` available.
++//!   That made every ordinary photo fail as "not enough memory to open this image".
+ //! - Windows: `GlobalMemoryStatusEx` available physical memory and commit headroom.
+ //! - macOS: the reclaimable pool from the VM counters (free, file-backed, purgeable).
+ //! - Elsewhere (including the web): unknown.
+@@ -34,7 +39,11 @@ impl SystemMemory {
+ 
+ /// Measures [`SystemMemory`] from the platform provider.
+ pub fn current() -> SystemMemory {
+-    #[cfg(target_os = "linux")]
++    #[cfg(target_env = "ohos")]
++    {
++        ohos_current()
++    }
++    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+     {
+         linux::snapshot()
+     }
+@@ -54,10 +63,15 @@ pub fn current() -> SystemMemory {
+ 
+ /// Bytes this process can still use without running out, counting free swap, or `None` where
+ /// that isn't known. On Linux: [`current`]'s available RAM plus free swap (both capped by the
+-/// memory cgroup). Elsewhere `None`: Windows refuses an allocation past its commit limit, which
+-/// the importers already report as an error, and macOS pages to disk as it needs.
++/// memory cgroup). On OpenHarmony: RAM only (its swap is zram managed by the system). Elsewhere
++/// `None`: Windows refuses an allocation past its commit limit, which the importers already
++/// report as an error, and macOS pages to disk as it needs.
+ pub fn available_with_swap() -> Option<u64> {
+-    #[cfg(target_os = "linux")]
++    #[cfg(target_env = "ohos")]
++    {
++        ohos_current().available_ram
++    }
++    #[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+     {
+         linux::available()
+     }
+@@ -67,7 +81,50 @@ pub fn available_with_swap() -> Option<u64> {
+     }
+ }
+ 
+-#[cfg(target_os = "linux")]
++/// Ceiling handed to the import budget on OpenHarmony.
++///
++/// An app sandbox has no readable memory cgroup, and the platform's own memory manager bounds
++/// the process independently. Match the native "unknown memory" automatic allowance (2 GiB)
++/// rather than handing all host RAM (32 GiB on a 2-in-1) to admission: ordinary photos need
++/// far less, while a multi-gigapixel document still gets a clear refusal instead of an OOM kill.
++#[cfg(any(target_env = "ohos", test))]
++const OHOS_APP_MEMORY_CAP: u64 = 2 << 30;
++
++/// [`current`] on OpenHarmony: `/proc/meminfo` is readable inside an app sandbox, unlike cgroup.
++#[cfg(target_env = "ohos")]
++fn ohos_current() -> SystemMemory {
++    match std::fs::read_to_string("/proc/meminfo") {
++        Ok(info) => ohos_snapshot_from(&info),
++        Err(_) => SystemMemory::UNKNOWN,
++    }
++}
++
++/// Builds an OHOS snapshot from `/proc/meminfo` text. Platform-independent so the policy is
++/// testable on every build host. A missing `MemAvailable` is unknown memory, never zero.
++#[cfg(any(target_env = "ohos", test))]
++fn ohos_snapshot_from(info: &str) -> SystemMemory {
++    let Some(ram) = meminfo_field(info, "MemAvailable:") else {
++        return SystemMemory::UNKNOWN;
++    };
++    SystemMemory {
++        available_ram: Some(ram.min(OHOS_APP_MEMORY_CAP)),
++        swap_free: Some(0),
++        commit_headroom: None,
++        constraint_unreadable: false,
++    }
++}
++
++/// A `/proc/meminfo` field in bytes.
++#[cfg(any(target_env = "ohos", test))]
++fn meminfo_field(info: &str, field: &str) -> Option<u64> {
++    let kb: u64 = info.lines().find_map(|l| l.strip_prefix(field))?.trim().trim_end_matches("kB").trim().parse().ok()?;
++    kb.checked_mul(1024)
++}
++
++// OpenHarmony reports target_os="linux" but its cgroup layout is not a Linux cgroup
++// hierarchy an app can read (see the OHOS provider above). Excluding this module keeps the
++// generic v1/v2 walk out of OHOS builds entirely: it would otherwise be dead code there.
++#[cfg(all(target_os = "linux", not(target_env = "ohos")))]
+ pub(super) mod linux {
+     use super::SystemMemory;
+     use std::path::{Path, PathBuf};
+@@ -1269,4 +1326,27 @@ mod tests {
+         assert_eq!(linux::available_at(&proc, &sys), Some((4 << 30) + (512 << 20)), "legacy helper keeps RAM + swap");
+         std::fs::remove_dir_all(proc.parent().unwrap()).unwrap();
+     }
++
++    #[test]
++    fn ohos_snapshot_bounds_host_ram_for_an_app_sandbox() {
++        // Real /proc/meminfo from a 32 GiB OHOS 2-in-1. The host figure must not become the
++        // app's import budget, and it must never be the fail-closed Some(0) that refused
++        // every ordinary photo.
++        let info = "MemTotal: 32679932 kB\nMemFree: 18314804 kB\nMemAvailable: 23288832 kB\nSwapFree: 60692 kB\n";
++        let snap = ohos_snapshot_from(info);
++        assert_eq!(snap.available_ram, Some(OHOS_APP_MEMORY_CAP));
++        assert_eq!(snap.swap_free, Some(0), "OHOS swap is zram managed by the system");
++        assert_eq!(snap.commit_headroom, None);
++        assert!(!snap.constraint_unreadable, "a measurement, not an unreadable constraint");
++        assert_eq!(meminfo_field(info, "MemAvailable:"), Some(23_288_832 * 1024));
++    }
++
++    #[test]
++    fn ohos_snapshot_keeps_low_ram_and_treats_missing_memavailable_as_unknown() {
++        let low = ohos_snapshot_from("MemTotal: 1048576 kB\nMemAvailable: 262144 kB\n");
++        assert_eq!(low.available_ram, Some(256 << 20), "a small host figure stays small");
++        let unknown = ohos_snapshot_from("MemTotal: 1048576 kB\n");
++        assert_eq!(unknown, SystemMemory::UNKNOWN, "no MemAvailable is unknown, never zero capacity");
++        assert_eq!(meminfo_field("MemAvailable: nonsense kB\n", "MemAvailable:"), None);
++    }
+ }

@@ -8,12 +8,13 @@
 | `0002-engine-hooks.patch` | 引擎钩子：`installed_profiles::set_app_profile_dir`、`format::atomic::set_host_writer`、`text::cjk::set_ui_locale`、`i18n::set_host_locale`、ArkUI 主题枚举、`prefs/validate.rs` 的 OHOS 门控；另修两条 CJK 测试断言——`tests/it/system_locale.rs`（File 标题经 `menu_keys::localized` 带助记符后缀如"文件(F)"，原测试精确查裸"文件"）与 v0.21.0 新增的 `tests/it/crop_overlay_icons.rs`（画布菜单行经 `tl!` 翻译，原测试查英文原名 `"Rule of Thirds"`，改为查 `i18n::t(kind.label())`）。**v0.21.0 起手写笔偏好采用上游的 `TabletInput`/`use_tablet_pressure`**，宿主旧加的 `StylusDoubleTap`/`StylusLongPress`/`block_finger_input*` 已移除（全树无消费代码） | 341 增 / 25 删 / 9 文件 |
 | `0003-host-fonts.patch` | 宿主字体：`text/cjk_fonts.rs` 的 `font_bytes_ok`、`store_host_cjk_font`、`reapply_host_fonts` | 77 增 / 1 文件 |
 | `0004-chrome-sandbox-seams.patch` | 沙箱与外观：`Services` 的 `pick_open`/`pick_import`/`pick_save`/`pick_folder`/`sandbox_dir`/`documents_dir`/`path_pickers_only`/`always_pick_save`/`default_save`、`ask_file` 同步直答、`window_fullscreen`、`host_titlebar`、`native_doc_windows`、`ThemeKind::chrome_css`；宿主全屏经 View › Screen Mode（`F`）请求 `Services::window_fullscreen`（不发 eframe 的视口命令），宿主回报的状态再用 `adopt` 映回 Screen Mode | 135 增 / 1 删 / 10 文件 |
+| `0005-ohos-memory.patch` | **OHOS 可用内存探测（2026-11-11 真机修复）**：`raster/src/memory/system.rs` 在 `target_env = "ohos"` 下改走 `/proc/meminfo` 的 `MemAvailable`（保守上限 2 GiB、swap 记 0、`constraint_unreadable = false`），并把通用 Linux cgroup v1/v2 模块从 OHOS 构建中排除。OHOS 把 memory 控制器挂在 `/dev/memcg`、mountinfo 不带控制器名且应用沙箱不可读，通用探测器会 fail-closed 返回 `Some(0)`，使 `io::memory::available()` 为 0、导入预算 soft/hard 都为 0，任何普通照片都报「内存不足」；另加 2 条平台无关单测 | 85 增 / 5 删 / 1 文件 |
 
-合计 1,415 增 / 127 删，**39 个文件**。v0.16 的分叉是 7,620 行 / 114 个文件。
+合计 1,500 增 / 132 删，**40 个文件**。v0.16 的分叉是 7,620 行 / 114 个文件。
 
-**分区规则**：v0.22.0 重生成时把每个文件的完整差异只放进**一个**补丁（按它在旧系列里首次出现的补丁归属），四个补丁合起来正好是「纯净 v0.22.0 → 仓库树」的全量差异，互不重叠。所以补丁的 a 侧 blob 就是 v0.22.0 本身，在纯净树上直接 `git apply` 即可干净应用，不需要靠 v0.21.0 的旧 blob 做 3-way。
+**分区规则**：v0.22.0 重生成时把每个文件的完整差异只放进**一个**补丁（按它在旧系列里首次出现的补丁归属），五个补丁合起来正好是「纯净 v0.22.0 → 仓库树」的全量差异，互不重叠。所以补丁的 a 侧 blob 就是 v0.22.0 本身，在纯净树上直接 `git apply` 即可干净应用，不需要靠 v0.21.0 的旧 blob 做 3-way。`0005` 是升级后追加的独立修复，同样以 v0.22.0 的该文件为 a 侧，不与前四个补丁重叠。
 
-四个文件都是纯 `git diff --full-index` 输出（`a/upstream/photocraft/...` 前缀，在仓库根应用），不含提交信息；每个补丁为什么存在，看这张表。
+五个文件都是纯 `git diff --full-index` 输出（`a/upstream/photocraft/...` 前缀，在仓库根应用），不含提交信息；每个补丁为什么存在，看这张表。
 
 **手写笔没有补丁**：0.18 的 `app.stylus.feed` 就是平台后端的投递入口，鸿蒙侧只做线格式与屏幕轴倾角，见 `docs/native/host-stylus.md`。
 
@@ -26,7 +27,7 @@
 
 依赖层零漂移：egui 0.37.0 / wgpu 30.0.1 / winit 0.30.13 全部不变，`wgpu-hal-30.0.1` 无需重 vendor；新增的只是上游 `[patch.crates-io]` 里 4 行 `hayro-*`，由 `pins --write` 自动带入。
 
-重生成后已在纯净 v0.22.0 上按序 `git apply` 4 个补丁，重放树 3,141 个文件与仓库树**逐字节一致**。
+重生成后已在纯净 v0.22.0 上按序 `git apply` 4 个补丁，重放树 3,141 个文件与仓库树**逐字节一致**。（`0005` 为 2026-11-11 追加的第 5 个补丁，重放时按序号接在后面即可。）
 
 ## v0.20.1 → v0.21.0 的冲突处理
 
@@ -56,7 +57,7 @@ v0.16 的做法是把上游整份拷下来改，改了 114 个文件、7620 行�
 rm -rf /tmp/replay && mkdir -p /tmp/replay/upstream
 git archive <tag> | tar -x -C /tmp/replay/upstream/photocraft
 cd /tmp/replay && git init -q . && git add -A && git commit -qm base
-for p in 0001-host-frame 0002-engine-hooks 0003-host-fonts 0004-chrome-sandbox-seams; do
+for p in 0001-host-frame 0002-engine-hooks 0003-host-fonts 0004-chrome-sandbox-seams 0005-ohos-memory; do
   git apply /path/to/repo/patches/$p.patch || break
 done
 diff -rq --exclude=.git --exclude=target upstream/photocraft /path/to/repo/upstream/photocraft

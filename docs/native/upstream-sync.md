@@ -82,6 +82,7 @@ Rules for keeping the series replayable:
 | Patch adds a host seam (a method, a feature, an extension point) | Keep it in `patches/`; it is the only thing upstream must carry. |
 | Patch adds a `cfg!(harmonyos-ui)` guard to an upstream file | Move the behaviour into the adapter instead; a guard is a hunk the next release has to carry. |
 | Patch is brand/i18n text | Ship it from the adapter at build time (an overlay), never as a patch hunk. |
+| Patch fixes a platform measurement OHOS reports differently from Linux (`patches/0005-ohos-memory.patch`) | Keep it a standalone numbered patch with a `target_env = "ohos"` branch plus host-runnable tests, so an upstream refactor of that one file conflicts in a single hunk. OHOS sets `target_os = "linux"`; never gate these on `target_os` alone. |
 
 Translation catalogs (`crates/ui-egui/src/i18n/*.tsv`) are the worst case: both sides append, so
 they conflict on nearly every release while carrying no logic. Overlaying them from the adapter
